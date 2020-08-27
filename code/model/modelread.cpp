@@ -1552,13 +1552,47 @@ int read_model_file(polymodel * pm, char *filename, int n_subsystems, model_subs
 						Error( LOCATION, "Model '%s' is chunked.  See John or Adam!\n", pm->filename );
 					}
 				}
-				pm->submodel[n].bsp_data_size = cfread_int(fp);
-				if ( pm->submodel[n].bsp_data_size > 0 )	{
-					pm->submodel[n].bsp_data = (ubyte *)vm_malloc(pm->submodel[n].bsp_data_size);
-					cfread(pm->submodel[n].bsp_data,1,pm->submodel[n].bsp_data_size,fp);
-					swap_bsp_data( pm, pm->submodel[n].bsp_data );
-				} else {
-					pm->submodel[n].bsp_data = NULL;
+
+				//ShivanSpS - if pof version is 2118 or higher load bsp_data as it is, otherwise, align it
+				if (pm->version >= 2118)
+				{
+					pm->submodel[n].bsp_data_size = cfread_int(fp);
+					if (pm->submodel[n].bsp_data_size > 0) {
+						pm->submodel[n].bsp_data = (ubyte*)vm_malloc(pm->submodel[n].bsp_data_size);
+						cfread(pm->submodel[n].bsp_data, 1, pm->submodel[n].bsp_data_size, fp);
+						swap_bsp_data(pm, pm->submodel[n].bsp_data);
+					}
+					else {
+						pm->submodel[n].bsp_data = NULL;
+					}
+				}
+				else
+				{
+					pm->submodel[n].bsp_data_size = cfread_int(fp);
+					if (pm->submodel[n].bsp_data_size > 0) {
+						mprintf(("BSP_Data is being aligned.\n"));
+						ubyte *bsp_in, *bsp_out;
+
+						bsp_in = (ubyte*)vm_malloc(pm->submodel[n].bsp_data_size);
+						bsp_out = (ubyte*)vm_malloc(pm->submodel[n].bsp_data_size * 2);
+
+						cfread(bsp_in, 1, pm->submodel[n].bsp_data_size, fp);
+
+						//mprintf(("BSP_Data was %d bytes in size\n", pm->submodel[n].bsp_data_size));
+						pm->submodel[n].bsp_data_size = align_bsp_data(bsp_in, bsp_out, pm->submodel[n].bsp_data_size);
+						//mprintf(("BSP_Data now is %d bytes in size\n", pm->submodel[n].bsp_data_size));
+
+						pm->submodel[n].bsp_data = (ubyte*)vm_malloc(pm->submodel[n].bsp_data_size);
+						memcpy(pm->submodel[n].bsp_data, bsp_out, pm->submodel[n].bsp_data_size);
+
+						swap_bsp_data(pm, pm->submodel[n].bsp_data);
+
+						vm_free(bsp_in);
+						vm_free(bsp_out);
+					}
+					else {
+						pm->submodel[n].bsp_data = NULL;
+					}
 				}
 
 				if ( strstr( pm->submodel[n].name, "thruster") )	
@@ -1590,14 +1624,36 @@ int read_model_file(polymodel * pm, char *filename, int n_subsystems, model_subs
 			}
 
 			case ID_SLDC: // kazan - Shield Collision tree
-				{
-					pm->sldc_size = cfread_int(fp);
-					pm->shield_collision_tree = (ubyte *)vm_malloc(pm->sldc_size);
-					cfread(pm->shield_collision_tree,1,pm->sldc_size,fp);
-					swap_sldc_data(pm->shield_collision_tree);
-					//mprintf(( "Shield Collision Tree, %d bytes in size\n", pm->sldc_size));
+				{   //ShivanSpS - if pof version is 2118 or higher ignore SLDC, otherwise convert it to slc2.
+					if (pm->version < 2118) {
+						mprintf(("SLDC is being converted to SLC2.\n"));
+						pm->sldc_size = cfread_int(fp);
+						ubyte* sldc_tree, * slc2_tree;
+						sldc_tree = (ubyte*)vm_malloc(pm->sldc_size);
+						slc2_tree = (ubyte*)vm_malloc(pm->sldc_size * 2);
+						cfread(sldc_tree, 1, pm->sldc_size, fp);
+						mprintf(("SLDC Shield Collision Tree was %d bytes in size\n", pm->sldc_size));
+						pm->sldc_size = convert_sldc_to_slc2(sldc_tree, slc2_tree, pm->sldc_size);
+						mprintf(("SLC2 Shield Collision Tree is %d bytes in size\n", pm->sldc_size));
+						pm->shield_collision_tree = (ubyte*)vm_malloc(pm->sldc_size);
+						memcpy(pm->shield_collision_tree, slc2_tree, pm->sldc_size);
+						swap_sldc_data(pm->shield_collision_tree);
+						vm_free(sldc_tree);
+						vm_free(slc2_tree);
+					}
 				}
 				break;
+
+			case ID_SLC2: // ShivanSpS -Newer version of the SLDC Shield Collision tree, only pof version 2118.
+			{   
+				pm->sldc_size = cfread_int(fp);
+				pm->shield_collision_tree = (ubyte *)vm_malloc(pm->sldc_size);
+				cfread(pm->shield_collision_tree,1,pm->sldc_size,fp);
+				swap_sldc_data(pm->shield_collision_tree);
+				//mprintf(( "SLC2 Shield Collision Tree, %d bytes in size\n", pm->sldc_size));
+			}
+			break;
+
 
 			case ID_SHLD:
 				{
@@ -5328,15 +5384,16 @@ void swap_bsp_data( polymodel * pm, void *model_ptr )
 }
 
 void swap_sldc_data(ubyte *buffer)
-{
+{//ShivanSpS - Changed type char for a type int
 #if BYTE_ORDER == BIG_ENDIAN
-	char *type_p = (char *)(buffer);
-	int *size_p = (int *)(buffer+1);
+	int *type_p = (int *)(buffer);
+	int *size_p = (int *)(buffer+4);
 	*size_p = INTEL_INT(*size_p);
+	*type_p = INTEL_INT(*type_p);
 
 	// split and polygons
-	vec3d *minbox_p = (vec3d*)(buffer+5);
-	vec3d *maxbox_p = (vec3d*)(buffer+17);
+	vec3d *minbox_p = (vec3d*)(buffer+8);
+	vec3d *maxbox_p = (vec3d*)(buffer+20);
 
 	minbox_p->xyz.x = INTEL_FLOAT(&minbox_p->xyz.x);
 	minbox_p->xyz.y = INTEL_FLOAT(&minbox_p->xyz.y);
@@ -5348,13 +5405,13 @@ void swap_sldc_data(ubyte *buffer)
 
 
 	// split
-	unsigned int *front_offset_p = (unsigned int*)(buffer+29);
-	unsigned int *back_offset_p = (unsigned int*)(buffer+33);
+	unsigned int *front_offset_p = (unsigned int*)(buffer+32);
+	unsigned int *back_offset_p = (unsigned int*)(buffer+36);
 
 	// polygons
-	unsigned int *num_polygons_p = (unsigned int*)(buffer+29);
+	unsigned int *num_polygons_p = (unsigned int*)(buffer+32);
 
-	unsigned int *shld_polys = (unsigned int*)(buffer+33);
+	unsigned int *shld_polys = (unsigned int*)(buffer+36);
 
 	if (*type_p == 0) // SPLIT
 	{
@@ -5370,4 +5427,136 @@ void swap_sldc_data(ubyte *buffer)
 		}			
 	}
 #endif
+}
+
+uint convert_sldc_to_slc2(ubyte* sldc , ubyte* slc2, uint tree_size)
+{
+	//ShivanSpS - Copied from Pof Aligner 0.2
+	/*Convert SLDC to SLC2*/
+	uint node_size, node_type_int, new_tree_size=0, count = 0;
+	char node_type_char;
+
+	//Process the SLDC tree to the end
+	while (count < tree_size)
+	{
+		//Save Node type and size
+		memcpy(&node_type_char, sldc, 1);
+		memcpy(&node_size, sldc + 1, 4);
+
+		//Convert Node type to int
+		node_type_int = (uint)node_type_char;
+
+		//Copy node type and adjusted node size, move pointers
+		memcpy(slc2, &node_type_int, 4);
+		node_size += 3;
+		memcpy(slc2 + 4, &node_size, 4);
+		node_size -= 3;
+		slc2 += 8;
+		sldc += 5;
+
+
+		//Copy Vectors
+		memcpy(slc2, sldc, 24);
+		slc2 += 24;
+		sldc += 24;
+
+		if (node_type_char == 0)
+		{
+			//Front and back offsets must be adjusted
+			uint front, back, newback = 0;
+			ubyte* p;
+
+			p = sldc - 29;
+			memcpy(&back, p + 33, 4);
+
+			//I need to find the new distance to back.
+			while (p < sldc + back - 29)
+			{
+				uint ns;
+				memcpy(&ns, p + 1, 4);
+				p += ns;
+				newback += ns + 3;
+
+			}
+
+			//Copy offsets
+			front = node_size + 3;
+			memcpy(slc2, &front, 4); //Front is always this node size+3;
+			memcpy(slc2 + 4, &newback, 4);
+
+			slc2 += 8;
+			sldc += 8;
+		}
+		else
+		{
+			//Copy the remaining data on the node
+			memcpy(slc2, sldc, node_size - 29);
+
+			//Move pointers
+			slc2 += node_size - 29;
+			sldc += node_size - 29;
+		}
+
+		//Count the new tree size and move the counter
+		count += node_size;
+		new_tree_size += node_size + 3;
+	}
+
+	return new_tree_size;
+}
+
+uint align_bsp_data(ubyte* bsp_in, ubyte* bsp_out, uint bsp_size)
+{
+	//ShivanSpS - Copied from Pof Aligner 0.3
+	ubyte *end;
+	uint copied = 0;
+	end = bsp_in + bsp_size;
+
+	uint bsp_chunk_type, bsp_chunk_size;
+	do {
+		memcpy(&bsp_chunk_type, bsp_in, 4);
+		memcpy(&bsp_chunk_size, bsp_in + 4, 4);
+
+		if (bsp_chunk_type == 0)
+			bsp_chunk_size = 4;
+
+		//mprintf(("|%d | %d|\n",bsp_chunk_type,bsp_chunk_size));
+
+		/*DEFPOINTS is the only bsp data chunk that could be unaligned*/
+		if (bsp_chunk_type == 1)
+		{
+			if ((bsp_chunk_size % 4) != 0)
+			{
+				//mprintf(("BSP DEFPOINTS DATA ALIGNED.\n"));
+				uint newsize = bsp_chunk_size + 4 - (bsp_chunk_size % 4);
+				memcpy(bsp_in + 4, &newsize, 4);
+				memcpy(bsp_out, bsp_in, bsp_chunk_size);
+				uint vertex_offset;
+				memcpy(&vertex_offset, bsp_in + 16, 4);
+				memmove(bsp_out + vertex_offset + (newsize - bsp_chunk_size), bsp_out + vertex_offset, bsp_chunk_size - vertex_offset);
+				vertex_offset += (newsize - bsp_chunk_size);
+				memcpy(bsp_out + 16, &vertex_offset, 4);
+
+				bsp_in += bsp_chunk_size;
+				bsp_out += newsize;
+				copied += newsize;
+			}
+			else
+			{
+				memcpy(bsp_out, bsp_in, bsp_chunk_size);
+				bsp_in += bsp_chunk_size;
+				bsp_out += bsp_chunk_size;
+				copied += bsp_chunk_size;
+			}
+		}
+		else
+		{
+			memcpy(bsp_out, bsp_in, bsp_chunk_size);
+			bsp_in += bsp_chunk_size;
+			bsp_out += bsp_chunk_size;
+			copied += bsp_chunk_size;
+		}
+	} while (bsp_in < end);
+
+	return copied;
 }

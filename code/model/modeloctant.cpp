@@ -23,16 +23,16 @@ extern void model_allocate_interp_data(int n_verts, int n_norms, int n_list_vert
 
 
 // returns 1 if a point is in an octant.
-int point_in_octant( polymodel * pm, model_octant * oct, vec3d *vert )
+int point_in_octant(polymodel*  pm, model_octant* oct, vec3d* vert)
 {
-	if ( vert->xyz.x < oct->min.xyz.x ) return 0;
-	if ( vert->xyz.x > oct->max.xyz.x ) return 0;
+	if (vert->xyz.x < oct->min.xyz.x) return 0;
+	if (vert->xyz.x > oct->max.xyz.x) return 0;
 
-	if ( vert->xyz.y < oct->min.xyz.y ) return 0;
-	if ( vert->xyz.y > oct->max.xyz.y ) return 0;
+	if (vert->xyz.y < oct->min.xyz.y) return 0;
+	if (vert->xyz.y > oct->max.xyz.y) return 0;
 
-	if ( vert->xyz.z < oct->min.xyz.z) return 0;
-	if ( vert->xyz.z > oct->max.xyz.z) return 0;
+	if (vert->xyz.z < oct->min.xyz.z) return 0;
+	if (vert->xyz.z > oct->max.xyz.z) return 0;
 
 	return 1;
 }
