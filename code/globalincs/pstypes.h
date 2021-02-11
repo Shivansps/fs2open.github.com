@@ -49,10 +49,10 @@ typedef __int32 fix;
 typedef __int64 ptr_s;
 typedef unsigned __int64 ptr_u;
 #else
-typedef long fix;
-typedef	long _fs_time_t;
-typedef ptrdiff_t ptr_s;
-typedef size_t ptr_u;
+typedef __int32 fix;
+typedef	__int32 _fs_time_t;
+typedef __int64 ptr_s;
+typedef unsigned __int64 ptr_u;
 #endif // 64-bit
 
 typedef __int64 longlong;
