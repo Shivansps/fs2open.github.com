@@ -51,8 +51,8 @@ typedef unsigned __int64 ptr_u;
 #else
 typedef long fix;
 typedef	long _fs_time_t;
-typedef int ptr_s;
-typedef unsigned int ptr_u;
+typedef ptrdiff_t ptr_s;
+typedef size_t ptr_u;
 #endif // 64-bit
 
 typedef __int64 longlong;

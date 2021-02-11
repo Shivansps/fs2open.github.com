@@ -266,3 +266,5 @@ xcuserdata
 # 
 
 *.xccheckout
+lib/libRocket/
+cmake/external/rpavlik-cmake-modules/
