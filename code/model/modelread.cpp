@@ -1570,28 +1570,34 @@ int read_model_file(polymodel * pm, char *filename, int n_subsystems, model_subs
 				{
 					pm->submodel[n].bsp_data_size = cfread_int(fp);
 					if (pm->submodel[n].bsp_data_size > 0) {
-						mprintf(("BSP_Data is being aligned.\n"));
-						ubyte *bsp_in, *bsp_out;
+						auto bsp_data = reinterpret_cast<ubyte*>(vm_malloc(pm->submodel[n].bsp_data_size));
 
-						bsp_in = (ubyte*)vm_malloc(pm->submodel[n].bsp_data_size);
-						bsp_out = (ubyte*)vm_malloc(pm->submodel[n].bsp_data_size * 2);
-
-						cfread(bsp_in, 1, pm->submodel[n].bsp_data_size, fp);
-
-						//mprintf(("BSP_Data was %d bytes in size\n", pm->submodel[n].bsp_data_size));
-						pm->submodel[n].bsp_data_size = align_bsp_data(bsp_in, bsp_out, pm->submodel[n].bsp_data_size);
-						//mprintf(("BSP_Data now is %d bytes in size\n", pm->submodel[n].bsp_data_size));
-
-						pm->submodel[n].bsp_data = (ubyte*)vm_malloc(pm->submodel[n].bsp_data_size);
-						memcpy(pm->submodel[n].bsp_data, bsp_out, pm->submodel[n].bsp_data_size);
+						cfread(bsp_data, 1, pm->submodel[n].bsp_data_size, fp);
 
 						swap_bsp_data(pm, pm->submodel[n].bsp_data);
 
-						vm_free(bsp_in);
-						vm_free(bsp_out);
+						auto bsp_data_size_aligned = align_bsp_data(bsp_data, nullptr, pm->submodel[n].bsp_data_size);
+
+						if (bsp_data_size_aligned != static_cast<uint>(pm->submodel[n].bsp_data_size)) {
+							auto bsp_data_aligned = reinterpret_cast<ubyte*>(vm_malloc(bsp_data_size_aligned));
+
+							align_bsp_data(bsp_data, bsp_data_aligned, pm->submodel[n].bsp_data_size);
+
+							// release unaligned data
+							vm_free(bsp_data);
+							bsp_data = nullptr;
+
+							//nprintf(("Model", "BSP ALIGN => %s:%s resized by %d bytes (%d total)\n", pm->filename, sm->name, bsp_data_size_aligned - sm->bsp_data_size, bsp_data_size_aligned));
+
+							pm->submodel[n].bsp_data = bsp_data_aligned;
+							pm->submodel[n].bsp_data_size = bsp_data_size_aligned;
+						}
+						else {
+							pm->submodel[n].bsp_data = bsp_data;
+						}
 					}
 					else {
-						pm->submodel[n].bsp_data = NULL;
+						pm->submodel[n].bsp_data = nullptr;
 					}
 				}
 
@@ -5505,58 +5511,88 @@ uint convert_sldc_to_slc2(ubyte* sldc , ubyte* slc2, uint tree_size)
 	return new_tree_size;
 }
 
+// if bsp_out is NULL then we just calculate new size
 uint align_bsp_data(ubyte* bsp_in, ubyte* bsp_out, uint bsp_size)
 {
-	//ShivanSpS - Copied from Pof Aligner 0.3
-	ubyte *end;
+	//ShivanSpS 
+	ubyte* end;
 	uint copied = 0;
 	end = bsp_in + bsp_size;
 
 	uint bsp_chunk_type, bsp_chunk_size;
 	do {
+		//Read Chunk type and size
 		memcpy(&bsp_chunk_type, bsp_in, 4);
-		memcpy(&bsp_chunk_size, bsp_in + 4, 4);
 
-		if (bsp_chunk_type == 0)
+		//Chunk type 0 is EOF, but the size is read as 0, it needs to be adjusted
+		if (bsp_chunk_type == 0) {
 			bsp_chunk_size = 4;
+		}
+		else {
+			memcpy(&bsp_chunk_size, bsp_in + 4, 4);
+		}
+
+		//Chunk size validation, if fails change it to copy the remaining data in chain
+		auto max_size = end - bsp_in;
+		if (bsp_chunk_size > max_size) {
+			Warning(LOCATION, "Invalid BSP Chunk size detected during BSP data align: Chunk Type: %d, Chunk Size: %d, Max Size: %d", bsp_chunk_type, bsp_chunk_size, static_cast<uint>(max_size));
+			bsp_chunk_size = static_cast<uint>(max_size);
+		}
 
 		//mprintf(("|%d | %d|\n",bsp_chunk_type,bsp_chunk_size));
 
-		/*DEFPOINTS is the only bsp data chunk that could be unaligned*/
-		if (bsp_chunk_type == 1)
-		{
-			if ((bsp_chunk_size % 4) != 0)
-			{
+		//DEFPOINTS is the only bsp data chunk that could be unaligned
+		if (bsp_chunk_type == 1) {
+			//if the size is not divisible by 4 align it, otherwise copy it.
+			if ((bsp_chunk_size % 4) != 0) {
 				//mprintf(("BSP DEFPOINTS DATA ALIGNED.\n"));
+				//Get the new size
 				uint newsize = bsp_chunk_size + 4 - (bsp_chunk_size % 4);
-				memcpy(bsp_in + 4, &newsize, 4);
-				memcpy(bsp_out, bsp_in, bsp_chunk_size);
-				uint vertex_offset;
-				memcpy(&vertex_offset, bsp_in + 16, 4);
-				memmove(bsp_out + vertex_offset + (newsize - bsp_chunk_size), bsp_out + vertex_offset, bsp_chunk_size - vertex_offset);
-				vertex_offset += (newsize - bsp_chunk_size);
-				memcpy(bsp_out + 16, &vertex_offset, 4);
 
+				if (bsp_out) {
+					//Copy the entire chunk to dest
+					memcpy(bsp_out, bsp_in, bsp_chunk_size);
+					//Write the new chunk size on dest
+					memcpy(bsp_out + 4, &newsize, 4);
+					//The the position of vertex data
+					uint vertex_offset;
+					memcpy(&vertex_offset, bsp_in + 16, 4);
+					//Move vertex data to the back of the chunk
+					memmove(bsp_out + vertex_offset + (newsize - bsp_chunk_size), bsp_out + vertex_offset, bsp_chunk_size - vertex_offset);
+					vertex_offset += (newsize - bsp_chunk_size);
+					//Write new vertex offset
+					memcpy(bsp_out + 16, &vertex_offset, 4);
+					//Move pointers
+					bsp_out += newsize;
+				}
+
+				//Move pointers
 				bsp_in += bsp_chunk_size;
-				bsp_out += newsize;
 				copied += newsize;
 			}
-			else
-			{
-				memcpy(bsp_out, bsp_in, bsp_chunk_size);
+			else {
+				//if aligned just copy it
+				if (bsp_out) {
+					memcpy(bsp_out, bsp_in, bsp_chunk_size);
+					bsp_out += bsp_chunk_size;
+				}
+
 				bsp_in += bsp_chunk_size;
-				bsp_out += bsp_chunk_size;
 				copied += bsp_chunk_size;
 			}
 		}
-		else
-		{
-			memcpy(bsp_out, bsp_in, bsp_chunk_size);
+		else {
+			//If the chunk is not a defpoint just copy it
+			if (bsp_out) {
+				memcpy(bsp_out, bsp_in, bsp_chunk_size);
+				bsp_out += bsp_chunk_size;
+			}
+
 			bsp_in += bsp_chunk_size;
-			bsp_out += bsp_chunk_size;
 			copied += bsp_chunk_size;
 		}
 	} while (bsp_in < end);
 
+	//Returns the size of the aligned bsp_data
 	return copied;
 }
