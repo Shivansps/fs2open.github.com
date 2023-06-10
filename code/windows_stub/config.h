@@ -62,7 +62,6 @@
 #include "SDL.h"
 #include "SDL_thread.h"
 
-
 // don't verbose stub funtions unless we're debugging
 #define STUB_FUNCTION nprintf(( "Warning", "STUB: %s in "__FILE__" at line %d, thread %d\n", __FUNCTION__, __LINE__, getpid() ))
 #define DEBUGME(d1) nprintf(( "Warning", "DEBUGME: %s in "__FILE__" at line %d, msg \"%s\", thread %d\n", __FUNCTION__, __LINE__, d1, getpid() ))
@@ -77,18 +76,13 @@
 #define FAR
 
 // Standard data types
-typedef int BOOL;
-typedef unsigned short WORD;
-typedef unsigned int UINT;
-#ifdef IAM_64BIT
-// force 32-bit version of DWORD
-typedef unsigned int DWORD;
-typedef unsigned int FOURCC;
-typedef unsigned int *PDWORD, *LPDWORD;
-#else
-typedef unsigned long FOURCC;
-typedef unsigned long DWORD, *PDWORD, *LPDWORD;
-#endif
+typedef int32_t BOOL;
+typedef uint16_t WORD;
+typedef uint32_t UINT;
+typedef uint32_t DWORD;
+typedef uint32_t FOURCC;
+typedef uint32_t *PDWORD, *LPDWORD;
+
 //typedef void *HMMIO;
 typedef SDL_RWops *HMMIO;
 typedef void *HACMSTREAM;
