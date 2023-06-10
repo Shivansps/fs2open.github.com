@@ -268,3 +268,5 @@ xcuserdata
 *.xccheckout
 lib/libRocket/
 cmake/external/rpavlik-cmake-modules/
+code/sound/grammar.h
+code/sound/phrases.cfg
