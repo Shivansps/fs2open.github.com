@@ -30,6 +30,7 @@
 #include "parse/parselo.h"
 #include "ship/ship.h"
 #include "weapon/weapon.h"
+#include "popup/popup.h"
 
 
 
@@ -190,6 +191,7 @@ static techroom_buttons Buttons[GR_NUM_RESOLUTIONS][NUM_BUTTONS] = {
 static UI_WINDOW Ui_window;
 static UI_BUTTON View_window;
 static int Tech_background_bitmap;
+static int Tech_background_bitmap_mask;
 static int Tab = SHIPS_DATA_TAB;
 static int List_offset;
 static int Select_tease_line;
@@ -1091,7 +1093,16 @@ void techroom_init()
 	Tech_background_bitmap = bm_load(Tech_background_filename[gr_screen.res]);
 	if (Tech_background_bitmap < 0) {
 		// failed to load bitmap, not a good thing
-		Error(LOCATION,"Couldn't load techroom background bitmap");
+		Warning(LOCATION, "Error loading techroom background bitmap %s", Tech_background_filename[gr_screen.res]);
+	}
+
+	Tech_background_bitmap_mask = bm_load(Tech_mask_filename[gr_screen.res]);
+	if (Tech_background_bitmap_mask < 0) {
+		Warning(LOCATION, "Error loading techroom background mask %s", Tech_mask_filename[gr_screen.res]);
+		return;
+	}
+	else {
+		Ui_window.set_mask_bmap(Tech_mask_filename[gr_screen.res]);
 	}
 
 	for (i=0; i<NUM_BUTTONS; i++) {
@@ -1229,21 +1240,29 @@ void techroom_close()
 
 	Techroom_show_all = 0;
 
-	if (Tech_background_bitmap) {
+	if (Tech_background_bitmap != -1) {
 		bm_release(Tech_background_bitmap);
 	}
 
 	Ui_window.destroy();
-	common_free_interface_palette();		// restore game palette
-	if (Palette_bmp){
-		bm_release(Palette_bmp);
+	if (Tech_background_bitmap_mask != -1) {
+		bm_release(Tech_background_bitmap_mask);
 	}
+	common_free_interface_palette();		// restore game palette
 }
 
 void techroom_do_frame(float frametime)
 {
 	
-	int i, k;	
+	int i, k;
+
+	// If we don't have a mask, we don't have enough data to do anything with this screen.
+	if (Tech_background_bitmap_mask == -1) {
+		popup_game_feature_not_in_demo();
+		gameseq_post_event(GS_EVENT_MAIN_MENU);
+		return;
+	}
+
 
 	// turn off controls when overlay is on
 	if ( help_overlay_active(Techroom_overlay_id) ) {

@@ -1169,7 +1169,7 @@ void brief_render(float frametime)
 		}
 	}
 
-	brief_maybe_blit_scene_cut(frametime);	
+	brief_maybe_blit_scene_cut(frametime);
 
 #if !defined(NDEBUG)
 	gr_set_color_fast(&Color_normal);
@@ -1835,7 +1835,9 @@ void brief_close()
 	// unload the audio streams used for voice playback
 	brief_voice_unload_all();
 
-	bm_unload(Fade_anim.first_frame);
+	if (Fade_anim.first_frame != -1) {
+		bm_unload(Fade_anim.first_frame);
+	}
 
 	Brief_ui_window.destroy();
 
@@ -1921,12 +1923,12 @@ void brief_maybe_blit_scene_cut(float frametime)
 
 		Fade_anim.time_elapsed += frametime;
 
-		if ( !Brief_playing_fade_sound ) {
+		if (Fade_anim.first_frame != -1 && !Brief_playing_fade_sound) {
 			gamesnd_play_iface(SND_BRIEFING_STATIC);					
 			Brief_playing_fade_sound = 1;
 		}
 
-		if ( Fade_anim.time_elapsed > Fade_anim.total_time ) {
+		if (Fade_anim.first_frame == -1 || Fade_anim.time_elapsed > Fade_anim.total_time) {
 			Fade_anim.time_elapsed = 0.0f;
 			Start_fade_up_anim = 0;
 			Start_fade_down_anim = 1;
@@ -1960,7 +1962,7 @@ void brief_maybe_blit_scene_cut(float frametime)
 
 		Fade_anim.time_elapsed += frametime;
 
-		if ( Fade_anim.time_elapsed > Fade_anim.total_time ) {
+		if (Fade_anim.first_frame == -1 || Fade_anim.time_elapsed > Fade_anim.total_time) {
 			Fade_anim.time_elapsed = 0.0f;
 			Start_fade_up_anim = 0;
 			Start_fade_down_anim = 0;
