@@ -1570,22 +1570,22 @@ int read_model_file(polymodel * pm, char *filename, int n_subsystems, model_subs
 				{
 					pm->submodel[n].bsp_data_size = cfread_int(fp);
 					if (pm->submodel[n].bsp_data_size > 0) {
-						auto bsp_data = reinterpret_cast<ubyte*>(vm_malloc(pm->submodel[n].bsp_data_size));
+						ubyte* bsp_data = reinterpret_cast<ubyte*>(vm_malloc(pm->submodel[n].bsp_data_size));
 
 						cfread(bsp_data, 1, pm->submodel[n].bsp_data_size, fp);
 
 						swap_bsp_data(pm, pm->submodel[n].bsp_data);
 
-						auto bsp_data_size_aligned = align_bsp_data(bsp_data, nullptr, pm->submodel[n].bsp_data_size);
+						uint bsp_data_size_aligned = align_bsp_data(bsp_data, NULL, pm->submodel[n].bsp_data_size);
 
 						if (bsp_data_size_aligned != static_cast<uint>(pm->submodel[n].bsp_data_size)) {
-							auto bsp_data_aligned = reinterpret_cast<ubyte*>(vm_malloc(bsp_data_size_aligned));
+							ubyte* bsp_data_aligned = reinterpret_cast<ubyte*>(vm_malloc(bsp_data_size_aligned));
 
 							align_bsp_data(bsp_data, bsp_data_aligned, pm->submodel[n].bsp_data_size);
 
 							// release unaligned data
 							vm_free(bsp_data);
-							bsp_data = nullptr;
+							bsp_data = NULL;
 
 							//nprintf(("Model", "BSP ALIGN => %s:%s resized by %d bytes (%d total)\n", pm->filename, sm->name, bsp_data_size_aligned - sm->bsp_data_size, bsp_data_size_aligned));
 
@@ -1597,7 +1597,7 @@ int read_model_file(polymodel * pm, char *filename, int n_subsystems, model_subs
 						}
 					}
 					else {
-						pm->submodel[n].bsp_data = nullptr;
+						pm->submodel[n].bsp_data = NULL;
 					}
 				}
 
@@ -5533,10 +5533,10 @@ uint align_bsp_data(ubyte* bsp_in, ubyte* bsp_out, uint bsp_size)
 		}
 
 		//Chunk size validation, if fails change it to copy the remaining data in chain
-		auto max_size = end - bsp_in;
+		uint max_size = static_cast<uint>(end - bsp_in);
 		if (bsp_chunk_size > max_size) {
 			Warning(LOCATION, "Invalid BSP Chunk size detected during BSP data align: Chunk Type: %d, Chunk Size: %d, Max Size: %d", bsp_chunk_type, bsp_chunk_size, static_cast<uint>(max_size));
-			bsp_chunk_size = static_cast<uint>(max_size);
+			bsp_chunk_size = max_size;
 		}
 
 		//mprintf(("|%d | %d|\n",bsp_chunk_type,bsp_chunk_size));
@@ -5549,7 +5549,7 @@ uint align_bsp_data(ubyte* bsp_in, ubyte* bsp_out, uint bsp_size)
 				//Get the new size
 				uint newsize = bsp_chunk_size + 4 - (bsp_chunk_size % 4);
 
-				if (bsp_out) {
+				if (bsp_out != NULL) {
 					//Copy the entire chunk to dest
 					memcpy(bsp_out, bsp_in, bsp_chunk_size);
 					//Write the new chunk size on dest
@@ -5572,7 +5572,7 @@ uint align_bsp_data(ubyte* bsp_in, ubyte* bsp_out, uint bsp_size)
 			}
 			else {
 				//if aligned just copy it
-				if (bsp_out) {
+				if (bsp_out != NULL) {
 					memcpy(bsp_out, bsp_in, bsp_chunk_size);
 					bsp_out += bsp_chunk_size;
 				}
@@ -5583,7 +5583,7 @@ uint align_bsp_data(ubyte* bsp_in, ubyte* bsp_out, uint bsp_size)
 		}
 		else {
 			//If the chunk is not a defpoint just copy it
-			if (bsp_out) {
+			if (bsp_out != NULL) {
 				memcpy(bsp_out, bsp_in, bsp_chunk_size);
 				bsp_out += bsp_chunk_size;
 			}
