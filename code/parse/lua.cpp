@@ -1774,7 +1774,7 @@ ADE_VIRTVAR(Textures, l_Model, "modeltextures_h", "Model textures", "modeltextur
 	if(pm == NULL)
 		return ade_set_error(L, "o", l_ModelTextures.Set(modeltextures_h()));
 
-	if(ADE_SETTING_VAR && oth->IsValid()) {
+	if(ADE_SETTING_VAR && oth && oth->IsValid()) {
 		//WMC TODO: Copy code
 		LuaError(L, "Attempt to use Incomplete Feature: Modeltextures copy");
 	}
@@ -1793,7 +1793,7 @@ ADE_VIRTVAR(Thrusters, l_Model, "thrusters", "Model thrusters", "thrusters", "Th
 	if(pm == NULL)
 		return ade_set_error(L, "o", l_Thrusters.Set(thrusters_h()));
 
-	if(ADE_SETTING_VAR && oth->IsValid()) {
+	if(ADE_SETTING_VAR && oth && oth->IsValid()) {
 		LuaError(L, "Attempt to use Incomplete Feature: Thrusters copy");
 	}
 
@@ -1811,7 +1811,7 @@ ADE_VIRTVAR(Eyepoints, l_Model, "eyepoints", "Model eyepoints", "eyepoints", "Ar
 	if(pm == NULL)
 		return ade_set_error(L, "o", l_Eyepoints.Set(eyepoints_h()));
 
-	if(ADE_SETTING_VAR && eph->IsValid()) {
+	if(ADE_SETTING_VAR && eph && eph->IsValid()) {
 		LuaError(L, "Attempt to use Incomplete Feature: Eyepoints copy");
 	}
 
@@ -1829,7 +1829,7 @@ ADE_VIRTVAR(Dockingbays, l_Model, "dockingbays", "Docking bays handle of model",
 	if(pm == NULL)
 		return ade_set_error(L, "o", l_Dockingbays.Set(dockingbays_h()));
 
-	if(ADE_SETTING_VAR && dbh->IsValid()) {
+	if(ADE_SETTING_VAR && dbh && dbh->IsValid()) {
 		LuaError(L, "Attempt to use Incomplete Feature: Docking bays copy");
 	}
 
@@ -2022,7 +2022,7 @@ ADE_INDEXER(l_Eyepoints, "eyepoint", "Gets en eyepoint handle", "eyepoint", "eye
 		return ade_set_error(L, "o", l_Eyepoint.Set(eye_h()));
 	}
 
-	if (ADE_SETTING_VAR && eh->IsValid())
+	if (ADE_SETTING_VAR && eh && eh->IsValid())
 	{
 		LuaError(L, "Attempted to use incomplete feature: Eyepoint copy");
 	}
@@ -2061,7 +2061,7 @@ ADE_INDEXER(l_Thrusters, "number Index", "Array of all thrusterbanks on this thr
 {
 	thrusters_h *trh = NULL;
 	char *s = NULL;
-	thrusterbank_h newThr = NULL;
+	thrusterbank_h newThr;
 
 	if (!ade_get_args(L, "os|o", l_Thrusters.GetPtr(&trh), &s, l_Thrusterbank.Get(&newThr)))
 		return ade_set_error(L, "o", l_Thrusterbank.Set(thrusterbank_h()));
@@ -4053,7 +4053,7 @@ ADE_VIRTVAR(Model, l_Weaponclass, "model", "Model", "model", "Weapon class model
 
 	weapon_info *wip = &Weapon_info[weapon_info_idx];
 
-	int mid = mdl->GetID();
+	int mid = (mdl ? mdl->GetID() : -1);
 
 	if(ADE_SETTING_VAR && mid > -1) {
 		wip->model_num = mid;
@@ -4455,7 +4455,7 @@ ADE_FUNC(__gc, l_ColInfo, NULL, "Removes the allocated reference of this handle"
 ADE_VIRTVAR(Model, l_ColInfo, "model", "The model this collision info is about", "model", "The model")
 {	
 	mc_info_h* info;
-	model_h * mh;
+	model_h * mh = NULL;
 
 	if(!ade_get_args(L, "o|o", l_ColInfo.GetPtr(&info), l_Model.GetPtr(&mh)))
 		return ade_set_error(L, "o", l_Model.Set(model_h()));
@@ -4467,7 +4467,7 @@ ADE_VIRTVAR(Model, l_ColInfo, "model", "The model this collision info is about",
 
 	int modelNum = collide->model_num;
 
-	if (ADE_SETTING_VAR)
+	if (ADE_SETTING_VAR && mh)
 	{
 		if (mh->IsValid())
 		{
@@ -4802,14 +4802,14 @@ ADE_VIRTVAR(LastOrientation, l_Object, "orientation", "Object world orientation 
 ADE_VIRTVAR(Physics, l_Object, "physics", "Physics data used to move ship between frames", "physics", "Physics data, or invalid physics handle if object handle is invalid")
 {
 	object_h *objh;
-	physics_info_h *pih;
+	physics_info_h *pih = NULL;
 	if(!ade_get_args(L, "o|o", l_Object.GetPtr(&objh), l_Physics.GetPtr(&pih)))
 		return ade_set_error(L, "o", l_Physics.Set(physics_info_h()));
 
 	if(!objh->IsValid())
 		return ade_set_error(L, "o", l_Physics.Set(physics_info_h()));
 
-	if(ADE_SETTING_VAR && pih->IsValid()) {
+	if(ADE_SETTING_VAR && pih && pih->IsValid()) {
 		objh->objp->phys_info = *pih->pi;
 	}
 
@@ -4827,7 +4827,7 @@ ADE_VIRTVAR(HitpointsLeft, l_Object, "number", "Hitpoints an object has left", "
 		return ade_set_error(L, "f", 0.0f);
 
 	//Set hull strength.
-	if(ADE_SETTING_VAR) {
+	if(ADE_SETTING_VAR && objh) {
 		objh->objp->hull_strength = f;
 	}
 
@@ -4837,7 +4837,7 @@ ADE_VIRTVAR(HitpointsLeft, l_Object, "number", "Hitpoints an object has left", "
 ADE_VIRTVAR(Shields, l_Object, "shields", "Shields", "shields", "Shields handle, or invalid shields handle if object handle is invalid")
 {
 	object_h *objh;
-	object_h *sobjh;
+	object_h *sobjh = NULL;
 	if(!ade_get_args(L, "o|o", l_Object.GetPtr(&objh), l_Shields.GetPtr(&sobjh)))
 		return ade_set_error(L, "o", l_Shields.Set(object_h()));
 
@@ -5868,7 +5868,7 @@ ADE_VIRTVAR(Model, l_Shipclass, "model", "Model", "model", "Ship class model, or
 
 	ship_info *sip = &Ship_info[ship_info_idx];
 
-	int mid = mdl->GetID();
+	int mid = (mdl ? mdl->GetID() : -1);
 
 	if(ADE_SETTING_VAR && mid > -1) {
 		sip->model_num = mid;
@@ -5935,7 +5935,7 @@ ADE_VIRTVAR(HitpointsMax, l_Shipclass, "number", "Ship class hitpoints", "number
 ADE_VIRTVAR(Species, l_Shipclass, "Species", "Ship class species", "species", "Ship class species, or invalid species handle if shipclass handle is invalid")
 {
 	int idx;
-	int sidx;
+	int sidx = -1;
 	if(!ade_get_args(L, "o|o", l_Shipclass.Get(&idx), l_Species.Get(&sidx)))
 		return ade_set_error(L, "o", l_Species.Set(-1));
 
@@ -5952,7 +5952,7 @@ ADE_VIRTVAR(Species, l_Shipclass, "Species", "Ship class species", "species", "S
 ADE_VIRTVAR(Type, l_Shipclass, "shiptype", "Ship class type", "shiptype", "Ship type, or invalid handle if shipclass handle is invalid")
 {
 	int idx;
-	int sidx;
+	int sidx = -1;
 	if(!ade_get_args(L, "o|o", l_Shipclass.Get(&idx), l_Shiptype.Get(&sidx)))
 		return ade_set_error(L, "o", l_Shiptype.Set(-1));
 
@@ -6231,6 +6231,7 @@ ADE_VIRTVAR(IsHull, l_Debris, "boolean", "Whether or not debris is a piece of hu
 
 ADE_VIRTVAR(OriginClass, l_Debris, "shipclass", "The shipclass of the ship this debris originates from", "shipclass", "The shipclass of the ship that created this debris")
 {
+//no es igual
 	object_h *oh;
 	int shipIdx = -1;
 	if(!ade_get_args(L, "o|o", l_Debris.GetPtr(&oh), &shipIdx))
@@ -6697,7 +6698,7 @@ ADE_INDEXER(l_WeaponBankType, "number Index", "Array of weapon banks", "weaponba
 {
 	ship_banktype_h *sb=NULL;
 	int idx = -1;
-	ship_bank_h *newbank;
+	ship_bank_h *newbank = NULL;
 	if(!ade_get_args(L, "oi|o", l_WeaponBankType.GetPtr(&sb), &idx, l_WeaponBank.GetPtr(&newbank)))
 		return ade_set_error(L, "o", l_WeaponBank.Set(ship_bank_h()));
 
@@ -6712,7 +6713,7 @@ ADE_INDEXER(l_WeaponBankType, "number Index", "Array of weapon banks", "weaponba
 
 				idx--; //Lua->FS2
 
-				if(ADE_SETTING_VAR && newbank->IsValid()) {
+				if(ADE_SETTING_VAR && newbank && newbank->IsValid()) {
 					sb->sw->primary_bank_weapons[idx] = newbank->sw->primary_bank_weapons[idx];
 					sb->sw->next_primary_fire_stamp[idx] = timestamp(0);
 					sb->sw->primary_bank_ammo[idx] = newbank->sw->primary_bank_ammo[idx];
@@ -6727,7 +6728,7 @@ ADE_INDEXER(l_WeaponBankType, "number Index", "Array of weapon banks", "weaponba
 
 				idx--; //Lua->FS2
 
-				if(ADE_SETTING_VAR && newbank->IsValid()) {
+				if(ADE_SETTING_VAR && newbank && newbank->IsValid()) {
 					sb->sw->primary_bank_weapons[idx] = newbank->sw->primary_bank_weapons[idx];
 					sb->sw->next_primary_fire_stamp[idx] = timestamp(0);
 					sb->sw->primary_bank_ammo[idx] = newbank->sw->primary_bank_ammo[idx];
@@ -6741,7 +6742,7 @@ ADE_INDEXER(l_WeaponBankType, "number Index", "Array of weapon banks", "weaponba
 
 				idx--; //Lua->FS2
 
-				if(ADE_SETTING_VAR && newbank->IsValid()) {
+				if(ADE_SETTING_VAR && newbank && newbank->IsValid()) {
 					Error(LOCATION, "Tertiary bank support is still in progress");
 					//WMC: TODO
 				}
@@ -6921,6 +6922,7 @@ ADE_VIRTVAR(AWACSIntensity, l_Subsystem, "number", "Subsystem AWACS intensity", 
 
 ADE_VIRTVAR(AWACSRadius, l_Subsystem, "number", "Subsystem AWACS radius", "number", "AWACS radius, or 0 if handle is invalid")
 {
+//no es igual
 	ship_subsys_h *sso;
 	float f = -1.0f;
 	if(!ade_get_args(L, "o|f", l_Subsystem.GetPtr(&sso), &f))
@@ -6956,14 +6958,14 @@ ADE_VIRTVAR(Orientation, l_Subsystem, "orientation", "Orientation of subobject o
 ADE_VIRTVAR(GunOrientation, l_Subsystem, "orientation", "Orientation of turret gun", "orientation", "Gun orientation, or null orientation if handle is invalid")
 {
 	ship_subsys_h *sso;
-	matrix_h *mh;
+	matrix_h *mh = NULL;
 	if(!ade_get_args(L, "o|o", l_Subsystem.GetPtr(&sso), l_Matrix.GetPtr(&mh)))
 		return ade_set_error(L, "o", l_Matrix.Set(matrix_h()));
 
 	if(!sso->IsValid())
 		return ade_set_error(L, "o", l_Matrix.Set(matrix_h()));
 
-	if(ADE_SETTING_VAR && mh != NULL)
+	if(ADE_SETTING_VAR && mh && mh != NULL)
 	{
 		sso->ss->submodel_info_2.angs = *mh->GetAngles();
 	}
@@ -7090,7 +7092,7 @@ ADE_FUNC(getModelName, l_Subsystem, NULL, "Returns the original name of the subs
 
 ADE_VIRTVAR(PrimaryBanks, l_Subsystem, "weaponbanktype", "Array of primary weapon banks", "weaponbanktype", "Primary banks, or invalid weaponbanktype handle if subsystem handle is invalid")
 {
-	ship_subsys_h *sso, *sso2;
+	ship_subsys_h *sso, *sso2 = NULL;
 	if(!ade_get_args(L, "o|o", l_Subsystem.GetPtr(&sso), l_Subsystem.GetPtr(&sso2)))
 		return ade_set_error(L, "o", l_WeaponBankType.Set(ship_banktype_h()));
 
@@ -7099,7 +7101,7 @@ ADE_VIRTVAR(PrimaryBanks, l_Subsystem, "weaponbanktype", "Array of primary weapo
 
 	ship_weapon *dst = &sso->ss->weapons;
 
-	if(ADE_SETTING_VAR && sso2->IsValid()) {
+	if(ADE_SETTING_VAR && sso2 && sso2->IsValid()) {
 		ship_weapon *src = &sso2->ss->weapons;
 
 		dst->current_primary_bank = src->current_primary_bank;
@@ -7120,7 +7122,7 @@ ADE_VIRTVAR(PrimaryBanks, l_Subsystem, "weaponbanktype", "Array of primary weapo
 
 ADE_VIRTVAR(SecondaryBanks, l_Subsystem, "weaponbanktype", "Array of secondary weapon banks", "weaponbanktype", "Secondary banks, or invalid weaponbanktype handle if subsystem handle is invalid")
 {
-	ship_subsys_h *sso, *sso2;
+	ship_subsys_h *sso, *sso2 = NULL;
 	if(!ade_get_args(L, "o|o", l_Subsystem.GetPtr(&sso), l_Subsystem.GetPtr(&sso2)))
 		return ade_set_error(L, "o", l_WeaponBankType.Set(ship_banktype_h()));
 
@@ -7129,7 +7131,7 @@ ADE_VIRTVAR(SecondaryBanks, l_Subsystem, "weaponbanktype", "Array of secondary w
 
 	ship_weapon *dst = &sso->ss->weapons;
 
-	if(ADE_SETTING_VAR && sso2->IsValid()) {
+	if(ADE_SETTING_VAR && sso2 && sso2->IsValid()) {
 		ship_weapon *src = &sso2->ss->weapons;
 
 		dst->current_secondary_bank = src->current_secondary_bank;
@@ -7153,7 +7155,7 @@ ADE_VIRTVAR(SecondaryBanks, l_Subsystem, "weaponbanktype", "Array of secondary w
 ADE_VIRTVAR(Target, l_Subsystem, "object", "Object targeted by this subsystem. If used to set a new target, AI targeting will be switched off.", "object", "Targeted object, or invalid object handle if subsystem handle is invalid")
 {
 	ship_subsys_h *sso;
-	object_h *objh;
+	object_h *objh = NULL;
 	if(!ade_get_args(L, "o|o", l_Subsystem.GetPtr(&sso), l_Object.GetPtr(&objh)))
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
@@ -7162,7 +7164,7 @@ ADE_VIRTVAR(Target, l_Subsystem, "object", "Object targeted by this subsystem. I
 
 	ship_subsys *ss = sso->ss;
 
-	if(ADE_SETTING_VAR && objh->IsValid())
+	if(ADE_SETTING_VAR && objh && objh->IsValid())
 	{
 		ss->turret_enemy_objnum = OBJ_INDEX(objh->objp);
 		ss->turret_enemy_sig = objh->sig;
@@ -7366,11 +7368,11 @@ ADE_FUNC(isTurret, l_Subsystem, NULL, "Determines if this subsystem is a turret"
 ADE_FUNC(isTargetInFOV, l_Subsystem, "object Target", "Determines if the object is in the turrets FOV", "boolean", "true if in FOV, false if not, nil on error or if subsystem is not a turret ")
 {
 	ship_subsys_h *sso;
-	object_h *newh;
+	object_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Subsystem.GetPtr(&sso), l_Object.GetPtr(&newh)))
 		return ADE_RETURN_NIL;
 
-	if (!sso->IsValid() || !newh->IsValid() || !(sso->ss->system_info->type == SUBSYSTEM_TURRET))
+	if (!sso->IsValid() || !newh || !newh->IsValid() || !(sso->ss->system_info->type == SUBSYSTEM_TURRET))
 		return ADE_RETURN_NIL;
 
 	vec3d	tpos,tvec;
@@ -7714,7 +7716,7 @@ ADE_VIRTVAR(Target, l_Order, "object", "Target of the order. Value may also be a
 	aip = &Ai_info[Ships[ohp->objh.objp->instance].ai_index];
 
 	if(ADE_SETTING_VAR){
-		if(newh->IsValid()){
+		if(newh && newh->IsValid()){
 			switch(ohp->aigp->ai_mode){
 			case AI_GOAL_DESTROY_SUBSYSTEM:
 			case AI_GOAL_CHASE:
@@ -7860,7 +7862,7 @@ ADE_VIRTVAR(TargetSubsystem, l_Order, "subsystem", "Target subsystem of the orde
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh->IsValid() && (ohp->aigp->ai_mode == AI_GOAL_DESTROY_SUBSYSTEM))
+		if(newh && newh->IsValid() && (ohp->aigp->ai_mode == AI_GOAL_DESTROY_SUBSYSTEM))
 		{
 			objp = &Objects[newh->ss->parent_objnum];
 			if(!stricmp(Ships[objp->instance].ship_name, ohp->aigp->target_name)) {
@@ -8827,7 +8829,7 @@ ADE_INDEXER(l_Ship, "string Name/number Index", "Array of ship subsystems", "sub
 {
 	object_h *objh;
 	char *s = NULL;
-	ship_subsys_h *sub;
+	ship_subsys_h *sub = NULL;
 	if(!ade_get_args(L, "o|so", l_Ship.GetPtr(&objh), &s, l_Subsystem.GetPtr(&sub)))
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
@@ -9163,7 +9165,7 @@ ADE_VIRTVAR(PrimaryTriggerDown, l_Ship, "boolean", "Determines if primary trigge
 ADE_VIRTVAR(PrimaryBanks, l_Ship, "weaponbanktype", "Array of primary weapon banks", "weaponbanktype", "Primary weapon banks, or invalid weaponbanktype handle if ship handle is invalid")
 {
 	object_h *objh;
-	ship_banktype_h *swh;
+	ship_banktype_h *swh = NULL;
 	if(!ade_get_args(L, "o|o", l_Ship.GetPtr(&objh), l_WeaponBankType.GetPtr(&swh)))
 		return ade_set_error(L, "o", l_WeaponBankType.Set(ship_banktype_h()));
 
@@ -9172,7 +9174,7 @@ ADE_VIRTVAR(PrimaryBanks, l_Ship, "weaponbanktype", "Array of primary weapon ban
 
 	ship_weapon *dst = &Ships[objh->objp->instance].weapons;
 
-	if(ADE_SETTING_VAR && swh->IsValid()) {
+	if(ADE_SETTING_VAR && swh && swh->IsValid()) {
 		ship_weapon *src = &Ships[swh->objp->instance].weapons;
 
 		dst->current_primary_bank = src->current_primary_bank;
@@ -9194,7 +9196,7 @@ ADE_VIRTVAR(PrimaryBanks, l_Ship, "weaponbanktype", "Array of primary weapon ban
 ADE_VIRTVAR(SecondaryBanks, l_Ship, "weaponbanktype", "Array of secondary weapon banks", "weaponbanktype", "Secondary weapon banks, or invalid weaponbanktype handle if ship handle is invalid")
 {
 	object_h *objh;
-	ship_banktype_h *swh;
+	ship_banktype_h *swh = NULL;
 	if(!ade_get_args(L, "o|o", l_Ship.GetPtr(&objh), l_WeaponBankType.GetPtr(&swh)))
 		return ade_set_error(L, "o", l_WeaponBankType.Set(ship_banktype_h()));
 
@@ -9203,7 +9205,7 @@ ADE_VIRTVAR(SecondaryBanks, l_Ship, "weaponbanktype", "Array of secondary weapon
 
 	ship_weapon *dst = &Ships[objh->objp->instance].weapons;
 
-	if(ADE_SETTING_VAR && swh->IsValid()) {
+	if(ADE_SETTING_VAR && swh && swh->IsValid()) {
 		ship_weapon *src = &Ships[swh->objp->instance].weapons;
 
 		dst->current_secondary_bank = src->current_secondary_bank;
@@ -9226,7 +9228,7 @@ ADE_VIRTVAR(SecondaryBanks, l_Ship, "weaponbanktype", "Array of secondary weapon
 ADE_VIRTVAR(TertiaryBanks, l_Ship, "weaponbanktype", "Array of tertiary weapon banks", "weaponbanktype", "Tertiary weapon banks, or invalid weaponbanktype handle if ship handle is invalid")
 {
 	object_h *objh;
-	ship_banktype_h *swh;
+	ship_banktype_h *swh = NULL;
 	if(!ade_get_args(L, "o|o", l_Ship.GetPtr(&objh), l_WeaponBankType.GetPtr(&swh)))
 		return ade_set_error(L, "o", l_WeaponBankType.Set(ship_banktype_h()));
 
@@ -9235,7 +9237,7 @@ ADE_VIRTVAR(TertiaryBanks, l_Ship, "weaponbanktype", "Array of tertiary weapon b
 
 	ship_weapon *dst = &Ships[objh->objp->instance].weapons;
 
-	if(ADE_SETTING_VAR && swh->IsValid()) {
+	if(ADE_SETTING_VAR && swh && swh->IsValid()) {
 		ship_weapon *src = &Ships[swh->objp->instance].weapons;
 
 		dst->current_tertiary_bank = src->current_tertiary_bank;
@@ -9254,7 +9256,7 @@ ADE_VIRTVAR(TertiaryBanks, l_Ship, "weaponbanktype", "Array of tertiary weapon b
 ADE_VIRTVAR(Target, l_Ship, "object", "Target of ship. Value may also be a deriviative of the 'object' class, such as 'ship'.", "object", "Target object, or invalid object handle if no target or ship handle is invalid")
 {
 	object_h *objh;
-	object_h *newh;
+	object_h *newh = NULL; 
 	//WMC - Maybe use two argument return capabilities of Lua to set/return subsystem?
 	if(!ade_get_args(L, "o|o", l_Ship.GetPtr(&objh), l_Object.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
@@ -9268,7 +9270,7 @@ ADE_VIRTVAR(Target, l_Ship, "object", "Target of ship. Value may also be a deriv
 	else
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
-	if(ADE_SETTING_VAR)
+	if(ADE_SETTING_VAR && newh)
 	{
 		if(aip->target_signature != newh->sig)
 		{
@@ -9298,7 +9300,7 @@ ADE_VIRTVAR(Target, l_Ship, "object", "Target of ship. Value may also be a deriv
 ADE_VIRTVAR(TargetSubsystem, l_Ship, "subsystem", "Target subsystem of ship.", "subsystem", "Target subsystem, or invalid subsystem handle if no target or ship handle is invalid")
 {
 	object_h *oh;
-	ship_subsys_h *newh;
+	ship_subsys_h *newh = NULL;
 	//WMC - Maybe use two argument return capabilities of Lua to set/return subsystem?
 	if(!ade_get_args(L, "o|o", l_Ship.GetPtr(&oh), l_Subsystem.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
@@ -9312,7 +9314,7 @@ ADE_VIRTVAR(TargetSubsystem, l_Ship, "subsystem", "Target subsystem of ship.", "
 	else
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
-	if(ADE_SETTING_VAR)
+	if(ADE_SETTING_VAR && newh)
 	{
 		if(newh->IsValid())
 		{
@@ -9362,7 +9364,7 @@ ADE_VIRTVAR(Team, l_Ship, "team", "Ship's team", "team", "Ship team, or invalid 
 
 ADE_VIRTVAR(Textures, l_Ship, "shiptextures", "Gets ship textures", "shiptextures", "Ship textures, or invalid shiptextures handle if ship handle is invalid")
 {
-	object_h *sh;
+	object_h *sh = NULL;
 	object_h *dh;
 	if(!ade_get_args(L, "o|o", l_Ship.GetPtr(&dh), l_Ship.GetPtr(&sh)))
 		return ade_set_error(L, "o", l_ShipTextures.Set(object_h()));
@@ -9370,7 +9372,7 @@ ADE_VIRTVAR(Textures, l_Ship, "shiptextures", "Gets ship textures", "shiptexture
 	if(!dh->IsValid())
 		return ade_set_error(L, "o", l_ShipTextures.Set(object_h()));
 
-	if(ADE_SETTING_VAR && sh != NULL && sh->IsValid()) {
+	if(ADE_SETTING_VAR && sh && sh->IsValid()) {
 		ship *src = &Ships[sh->objp->instance];
 		ship *dest = &Ships[dh->objp->instance];
 		
@@ -9614,7 +9616,7 @@ ADE_FUNC(kill, l_Ship, "[object Killer]", "Kills the ship. Set \"Killer\" to the
 	if(!victim->IsValid())
 		return ADE_RETURN_NIL;
 
-	if(!killer->IsValid())
+	if(!killer || !killer->IsValid())
 		return ADE_RETURN_NIL;
 
 	//Ripped straight from shiphit.cpp
@@ -9773,8 +9775,8 @@ ADE_FUNC(giveOrder, l_Ship, "enumeration Order, [object Target=nil, subsystem Ta
 	if(priority > 1.0f)
 		priority = 1.0f;
 
-	bool tgh_valid = tgh->IsValid();
-	bool tgsh_valid = tgsh->IsValid();
+	bool tgh_valid =  tgh && tgh->IsValid();
+	bool tgsh_valid = tgsh && tgsh->IsValid();
 	int ai_mode = AI_GOAL_NONE;
 	int ai_submode = -1234567;
 	char *ai_shipname = NULL;
@@ -10415,7 +10417,7 @@ ADE_VIRTVAR(FlakDetonationRange, l_Weapon, "number", "Range at which flak will d
 ADE_VIRTVAR(Target, l_Weapon, "object", "Target of weapon. Value may also be a deriviative of the 'object' class, such as 'ship'.", "object", "Weapon target, or invalid object handle if weapon handle is invalid")
 {
 	object_h *objh;
-	object_h *newh;
+	object_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Weapon.GetPtr(&objh), l_Object.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
@@ -10430,7 +10432,7 @@ ADE_VIRTVAR(Target, l_Weapon, "object", "Target of weapon. Value may also be a d
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh != NULL && newh->IsValid())
+		if(newh && newh->IsValid())
 		{
 			if(wp->target_sig != newh->sig)
 			{
@@ -10449,7 +10451,7 @@ ADE_VIRTVAR(Target, l_Weapon, "object", "Target of weapon. Value may also be a d
 ADE_VIRTVAR(ParentTurret, l_Weapon, "subsystem", "Turret which fired this weapon.", "subsystem", "Turret subsystem handle, or an invalid handle if the weapon not fired from a turret")
 {
 	object_h *objh;
-	ship_subsys_h *newh;
+	ship_subsys_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Weapon.GetPtr(&objh), l_Subsystem.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
@@ -10464,7 +10466,7 @@ ADE_VIRTVAR(ParentTurret, l_Weapon, "subsystem", "Turret which fired this weapon
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh != NULL && newh->IsValid())
+		if(newh && newh->IsValid())
 		{
 			if(wp->turret_subsys != newh->ss)
 			{
@@ -10486,7 +10488,7 @@ ADE_VIRTVAR(ParentTurret, l_Weapon, "subsystem", "Turret which fired this weapon
 ADE_VIRTVAR(HomingObject, l_Weapon, "object", "Object that weapon will home in on. Value may also be a deriviative of the 'object' class, such as 'ship'", "object", "Object that weapon is homing in on, or an invalid object handle if weapon is not homing or the weapon handle is invalid")
 {
 	object_h *objh;
-	object_h *newh;
+	object_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Weapon.GetPtr(&objh), l_Object.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
@@ -10501,7 +10503,7 @@ ADE_VIRTVAR(HomingObject, l_Weapon, "object", "Object that weapon will home in o
 
 	if(ADE_SETTING_VAR)
 	{
-		if (newh != NULL && newh->IsValid())
+		if (newh && newh->IsValid())
 		{
 			if (wp->target_sig != newh->sig)
 			{
@@ -10524,7 +10526,7 @@ ADE_VIRTVAR(HomingPosition, l_Weapon, "vector", "Position that weapon will home 
 	"vector", "Homing point, or null vector if weapon handle is invalid")
 {
 	object_h *objh;
-	vec3d *v3;
+	vec3d *v3 = NULL;
 	if(!ade_get_args(L, "o|o", l_Weapon.GetPtr(&objh), l_Vector.GetPtr(&v3)))
 		return ade_set_error(L, "o", l_Vector.Set(vmd_zero_vector));
 
@@ -10539,7 +10541,7 @@ ADE_VIRTVAR(HomingPosition, l_Weapon, "vector", "Position that weapon will home 
 
 	if(ADE_SETTING_VAR)
 	{
-		if(v3 != NULL)
+		if(v3)
 		{
 			wp->homing_pos = *v3;
 		}
@@ -10555,7 +10557,7 @@ ADE_VIRTVAR(HomingPosition, l_Weapon, "vector", "Position that weapon will home 
 ADE_VIRTVAR(HomingSubsystem, l_Weapon, "subsystem", "Subsystem that weapon will home in on.", "subsystem", "Homing subsystem, or invalid subsystem handle if weapon is not homing or weapon handle is invalid")
 {
 	object_h *objh;
-	ship_subsys_h *newh;
+	ship_subsys_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Weapon.GetPtr(&objh), l_Subsystem.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
@@ -10570,7 +10572,7 @@ ADE_VIRTVAR(HomingSubsystem, l_Weapon, "subsystem", "Subsystem that weapon will 
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh != NULL && newh->IsValid())
+		if(newh && newh->IsValid())
 		{
 			if(wp->target_sig != newh->sig)
 			{
@@ -10670,7 +10672,7 @@ ADE_VIRTVAR(Class, l_Beam, "weaponclass", "Weapon's class", "weaponclass", "Weap
 ADE_VIRTVAR(LastShot, l_Beam, "vector", "End point of the beam", "vector", "vector or null vector if beam handle is not valid")
 {
 	object_h *oh=NULL;
-	vec3d *vec3;
+	vec3d *vec3 = NULL;
 	if(!ade_get_args(L, "o|o", l_Beam.GetPtr(&oh), l_Vector.GetPtr(&vec3)))
 		return ade_set_error(L, "o", l_Vector.Set(vmd_zero_vector));
 
@@ -10679,7 +10681,7 @@ ADE_VIRTVAR(LastShot, l_Beam, "vector", "End point of the beam", "vector", "vect
 
 	beam *bp = &Beams[oh->objp->instance];
 
-	if(ADE_SETTING_VAR) {
+	if(ADE_SETTING_VAR && vec3) {
 		bp->last_shot = *vec3;
 	}
 
@@ -10689,7 +10691,7 @@ ADE_VIRTVAR(LastShot, l_Beam, "vector", "End point of the beam", "vector", "vect
 ADE_VIRTVAR(LastStart, l_Beam, "vector", "Start point of the beam", "vector", "vector or null vector if beam handle is not valid")
 {
 	object_h *oh=NULL;
-	vec3d *v3;
+	vec3d *v3 = NULL;
 	if(!ade_get_args(L, "o|o", l_Beam.GetPtr(&oh), l_Vector.GetPtr(&v3)))
 		return ade_set_error(L, "o", l_Vector.Set(vmd_zero_vector));
 
@@ -10698,7 +10700,7 @@ ADE_VIRTVAR(LastStart, l_Beam, "vector", "Start point of the beam", "vector", "v
 
 	beam *bp = &Beams[oh->objp->instance];
 
-	if(ADE_SETTING_VAR) {
+	if(ADE_SETTING_VAR && v3) {
 		bp->last_start = *v3;
 	}
 
@@ -10708,7 +10710,7 @@ ADE_VIRTVAR(LastStart, l_Beam, "vector", "Start point of the beam", "vector", "v
 ADE_VIRTVAR(Target, l_Beam, "object", "Target of beam. Value may also be a deriviative of the 'object' class, such as 'ship'.", "object", "Beam target, or invalid object handle if beam handle is invalid")
 {
 	object_h *objh;
-	object_h *newh;
+	object_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Beam.GetPtr(&objh), l_Object.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
@@ -10723,7 +10725,7 @@ ADE_VIRTVAR(Target, l_Beam, "object", "Target of beam. Value may also be a deriv
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh != NULL && newh->IsValid())
+		if(newh && newh->IsValid())
 		{
 			if(bp->target_sig != newh->sig)
 			{
@@ -10744,7 +10746,7 @@ ADE_VIRTVAR(Target, l_Beam, "object", "Target of beam. Value may also be a deriv
 ADE_VIRTVAR(TargetSubsystem, l_Beam, "subsystem", "Subsystem that beam is targeting.", "subsystem", "Target subsystem, or invalid subsystem handle if beam handle is invalid")
 {
 	object_h *objh;
-	ship_subsys_h *newh;
+	ship_subsys_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Beam.GetPtr(&objh), l_Subsystem.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
@@ -10759,7 +10761,7 @@ ADE_VIRTVAR(TargetSubsystem, l_Beam, "subsystem", "Subsystem that beam is target
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh != NULL && newh->IsValid())
+		if(newh && newh->IsValid())
 		{
 			if(bp->target_sig != newh->sig)
 			{
@@ -10781,7 +10783,7 @@ ADE_VIRTVAR(TargetSubsystem, l_Beam, "subsystem", "Subsystem that beam is target
 ADE_VIRTVAR(ParentShip, l_Beam, "object", "Parent of the beam.", "object", "Beam parent, or invalid object handle if beam handle is invalid")
 {
 	object_h *objh;
-	object_h *newh;
+	object_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Beam.GetPtr(&objh), l_Object.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
@@ -10796,7 +10798,7 @@ ADE_VIRTVAR(ParentShip, l_Beam, "object", "Parent of the beam.", "object", "Beam
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh != NULL && newh->IsValid())
+		if(newh && newh->IsValid())
 		{
 			if(bp->sig != newh->sig)
 			{
@@ -10817,7 +10819,7 @@ ADE_VIRTVAR(ParentShip, l_Beam, "object", "Parent of the beam.", "object", "Beam
 ADE_VIRTVAR(ParentSubsystem, l_Beam, "subsystem", "Subsystem that beam is fired from.", "subsystem", "Parent subsystem, or invalid subsystem handle if beam handle is invalid")
 {
 	object_h *objh;
-	ship_subsys_h *newh;
+	ship_subsys_h *newh = NULL;
 	if(!ade_get_args(L, "o|o", l_Beam.GetPtr(&objh), l_Subsystem.GetPtr(&newh)))
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
@@ -10832,7 +10834,7 @@ ADE_VIRTVAR(ParentSubsystem, l_Beam, "subsystem", "Subsystem that beam is fired 
 
 	if(ADE_SETTING_VAR)
 	{
-		if(newh != NULL && newh->IsValid())
+		if(newh && newh->IsValid())
 		{
 			if(bp->sig != newh->sig)
 			{
@@ -11192,7 +11194,7 @@ ADE_VIRTVAR(Position, l_Camera, "vector", "New camera position", "vector", "Came
 	if(!cid.isValid())
 		return ade_set_error(L, "o", l_Vector.Set(vmd_zero_vector));
 
-	if(ADE_SETTING_VAR) {
+	if(ADE_SETTING_VAR && pos) {
 		cid.getCamera()->set_position(pos);
 	}
 
@@ -11211,7 +11213,7 @@ ADE_VIRTVAR(Self, l_Camera, "object", "New mount object", "object", "Camera obje
 	if(!cid.isValid())
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
-	if(ADE_SETTING_VAR && oh->IsValid()) {
+	if(ADE_SETTING_VAR && oh && oh->IsValid()) {
 		cid.getCamera()->set_object_host(oh->objp);
 	}
 
@@ -11228,7 +11230,7 @@ ADE_VIRTVAR(SelfSubsystem, l_Camera, "subsystem", "New mount object subsystem", 
 	if(!cid.isValid())
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
-	if(ADE_SETTING_VAR && sso->IsValid()) {
+	if(ADE_SETTING_VAR && sso && sso->IsValid()) {
 		cid.getCamera()->set_object_host(sso->objp, sso->ss->system_info->subobj_num);
 	}
 
@@ -11266,7 +11268,7 @@ ADE_VIRTVAR(Target, l_Camera, "object", "New target object", "object", "Camera t
 	if(!cid.isValid())
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 
-	if(ADE_SETTING_VAR && oh->IsValid()) {
+	if(ADE_SETTING_VAR && oh && oh->IsValid()) {
 		cid.getCamera()->set_object_target(oh->objp);
 	}
 
@@ -11283,7 +11285,7 @@ ADE_VIRTVAR(TargetSubsystem, l_Camera, "subsystem", "New target subsystem", "sub
 	if(!cid.isValid())
 		return ade_set_error(L, "o", l_Subsystem.Set(ship_subsys_h()));
 
-	if(ADE_SETTING_VAR && sso->IsValid()) {
+	if(ADE_SETTING_VAR && sso && sso->IsValid()) {
 		cid.getCamera()->set_object_target(sso->objp, sso->ss->system_info->subobj_num);
 	}
 
@@ -11856,7 +11858,7 @@ ADE_VIRTVAR(TracerLength, l_Particle, "number", "The tracer legth of the particl
 ADE_VIRTVAR(AttachedObject, l_Particle, "object", "The object this particle is attached to. If valid the position will be relativ to this object and the velocity will be ignored.", "object", "Attached object or invalid object handle on error")
 {
 	particle_h *ph = NULL;
-	object_h *newObj;
+	object_h *newObj = NULL;
 	if (!ade_get_args(L, "o|o", l_Particle.GetPtr(&ph), l_Object.GetPtr(&newObj)))
 		return ade_set_error(L, "o", l_Object.Set(object_h()));
 	
@@ -11868,7 +11870,7 @@ ADE_VIRTVAR(AttachedObject, l_Particle, "object", "The object this particle is a
 
 	if (ADE_SETTING_VAR)
 	{
-		if (newObj->IsValid())
+		if (newObj && newObj->IsValid())
 			ph->Get()->attached_objnum = newObj->objp->signature;
 	}
 
@@ -12241,6 +12243,10 @@ ADE_FUNC(setControlMode, l_Base, "NIL or enumeration LE_*_CONTROL", "Sets the cu
 		else
 			return ade_set_error(L, "s", "");
 	}
+	
+	if (!e) {
+		return ade_set_error(L, "s", "");
+	}
 
 	switch (e->index) {
 		case LE_NORMAL_CONTROLS:
@@ -12272,6 +12278,10 @@ ADE_FUNC(setButtonControlMode, l_Base, "NIL or enumeration LE_*_BUTTON_CONTROL",
 			return ade_set_args(L, "s", "ADDITIVE");
 		else
 			return ade_set_error(L, "s", "");
+	}
+	
+	if (!e) {
+		return ade_set_error(L, "s", "");
 	}
 
 	switch (e->index) {
@@ -15141,7 +15151,7 @@ ADE_FUNC(createWaypoint, l_Mission, "[vector Position, waypointlist List]",
 
 	// determine where we need to create it - it looks like we were given a waypoint list but not a waypoint itself
 	int waypoint_instance = -1;
-	if (wlh->IsValid())
+	if (wlh && wlh->IsValid())
 	{
 		int wp_list_index = find_index_of_waypoint_list(wlh->wlp);
 		int wp_index = (int) wlh->wlp->get_waypoints().size() - 1;
@@ -15174,7 +15184,7 @@ ADE_FUNC(createWeapon, l_Mission, "[weaponclass Class=WeaponClass[1], orientatio
 		real_orient = orient->GetMatrix();
 	}
 
-	int parent_idx = parent->IsValid() ? OBJ_INDEX(parent->objp) : -1;
+	int parent_idx = (parent && parent->IsValid()) ? OBJ_INDEX(parent->objp) : -1;
 
 	int obj_idx = weapon_create(&pos, real_orient, wclass, parent_idx, group);
 
