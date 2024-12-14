@@ -7,6 +7,7 @@
  *
 */
 
+#include <filesystem>
 #include "cmdline/cmdline.h"
 #include "camera/camera.h" //VIEWER_ZOOM_DEFAULT
 #include "cfile/cfilesystem.h"
@@ -1495,7 +1496,13 @@ static json_t* json_get_v1() {
 		json_object_set_new(root, "joysticks", joystick_array);
 	}
 	{
-		json_object_set_new(root, "pref_path", json_string(os_get_config_path().c_str()));
+		auto pref_path = os_get_config_path();
+
+		//We are in portable or legacy mode? replace the pref path for the working folder instead
+		if (Cmdline_portable_mode || os_is_legacy_mode()) {
+			pref_path = std::filesystem::current_path().string();
+		}
+		json_object_set_new(root, "pref_path", json_string(pref_path.c_str()));
 	}
 
 	return root;
