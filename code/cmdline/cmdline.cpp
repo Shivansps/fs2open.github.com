@@ -1496,8 +1496,13 @@ static json_t* json_get_v1() {
 	}
 	{
 		auto pref_path = os_get_config_path();
-		if (pref_path.length() <= 3 && pref_path.compare("." + DIR_SEPARATOR_CHAR)) {
-			pref_path = os_get_executable_path();
+
+		//We are in portable or legacy mode? replace the pref path for the executable folder instead
+		if(Cmdline_portable_mode || os_is_legacy_mode()) {
+			auto exec_path = os_get_executable_path();
+			if (exec_path.has_value()) {
+				pref_path = exec_path.value();
+			}
 		}
 		json_object_set_new(root, "pref_path", json_string(pref_path.c_str()));
 	}

@@ -832,7 +832,7 @@ SCP_string os_get_config_path(const SCP_string& subpath)
 	return ss.str();
 }
 
-SCP_string os_get_executable_path()
+tl::optional<SCP_string> os_get_executable_path()
 {
 	char* base_path = SDL_GetBasePath();
 
@@ -843,6 +843,6 @@ SCP_string os_get_executable_path()
 	}
 	else {
 		//Unsupported by the platform
-		return "." + DIR_SEPARATOR_CHAR;
+		return tl::nullopt;
 	}
 }
