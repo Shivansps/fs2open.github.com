@@ -1495,7 +1495,11 @@ static json_t* json_get_v1() {
 		json_object_set_new(root, "joysticks", joystick_array);
 	}
 	{
-		json_object_set_new(root, "pref_path", json_string(os_get_config_path().c_str()));
+		auto pref_path = os_get_config_path();
+		if (pref_path.length() <= 3 && pref_path.compare("." + DIR_SEPARATOR_CHAR)) {
+			pref_path = os_get_executable_path();
+		}
+		json_object_set_new(root, "pref_path", json_string(pref_path.c_str()));
 	}
 
 	return root;

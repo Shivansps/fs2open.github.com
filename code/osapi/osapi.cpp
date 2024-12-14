@@ -832,3 +832,17 @@ SCP_string os_get_config_path(const SCP_string& subpath)
 	return ss.str();
 }
 
+SCP_string os_get_executable_path()
+{
+	char* base_path = SDL_GetBasePath();
+
+	if (base_path != nullptr) {
+		auto path_str = SCP_string(base_path);
+		SDL_free(base_path);
+		return path_str;
+	}
+	else {
+		//Unsupported by the platform
+		return "." + DIR_SEPARATOR_CHAR;
+	}
+}

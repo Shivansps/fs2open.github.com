@@ -91,6 +91,13 @@ bool os_is_legacy_mode();
  */
 SCP_string os_get_config_path(const SCP_string& subpath = "");
 
+/**
+* @brief Gets the full path to the current executable folder
+* 
+* @returns The path to the folder as SCP_string or "." + DIR_SEPARATOR_CHAR if the feature is not supported on current SDL platform
+**/
+SCP_string os_get_executable_path();
+
 namespace os
 {
 	/**
