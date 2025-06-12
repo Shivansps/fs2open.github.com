@@ -35,6 +35,9 @@
 
 #include "cfile/cfile.h"
 #include "cfile/cfilesystem.h"
+#include "cfile/cfilecompression.h"
+#include "cfile/cfilezip.h"
+#include "cfile/cfilezip.cpp"
 #include "cmdline/cmdline.h"
 #include "globalincs/pstypes.h"
 #include "def_files/def_files.h"
@@ -56,6 +59,7 @@ typedef struct cf_root {
 	SCP_string	path;	// Contains something like c:\projects\freespace or c:\projects\freespace\freespace.vp
 	int		roottype;						// CF_ROOTTYPE_PATH  = Path, CF_ROOTTYPE_PACK =Pack file, CF_ROOTTYPE_MEMORY=In memory
 	uint32_t location_flags;
+	COMPRESSION_INFO compression_info;
 
 #ifdef SCP_UNIX
 	// map of existing case sensitive paths
@@ -114,6 +118,9 @@ typedef struct cf_file_block {
 
 static uint Num_files = 0;
 static SCP_vector<std::unique_ptr<cf_file_block>> File_blocks;
+
+//Check if a root pack is compressed
+void cf_root_check_compression_info(cf_root* cr);
 
 // Return a pointer to to file 'index'.
 cf_file *cf_get_file(int index)
@@ -467,7 +474,35 @@ static SCP_string cf_get_root_pathtype(__UNUSED const cf_root *root, const int t
 	return Pathtypes[type].path;
 }
 
+void cf_root_check_compression_info(cf_root *cr)
+{
+	if (cr == nullptr)
+		return;
 
+	FILE* fp = fopen(cr->path.c_str(), "rb");
+	fseek(fp, 0, SEEK_END);
+	size_t file_size = ftell(fp);
+	if (file_size <= COMP_FILE_MIN_SIZE) {
+		fclose(fp);
+		return;
+	}
+
+	// Read file header magic
+	fseek(fp, 0, SEEK_SET);
+	char header[COMP_HEADER_MAX_BYTES];
+	fread(header, COMP_HEADER_MAX_BYTES, 1, fp);
+	auto header_id = comp_get_header(header);
+
+	if (header_id != COMP_HEADER_IS_XZ) {
+		fclose(fp);
+		return; // unsupported
+	}
+
+	// Is a supported compressed file, load up compression info
+	fseek(fp, 0, SEEK_SET);
+	comp_create_ci(&cr->compression_info, fp, file_size, 0, header_id);
+	fclose(fp);
+}
 
 // packfile sort function
 bool cf_packfile_sort_func(const cf_root_sort &r1, const cf_root_sort &r2)
@@ -490,9 +525,9 @@ void cf_build_pack_list( cf_root *root )
 	int i;
 
 #ifdef _WIN32
-	const SCP_vector<SCP_string> filters = { "*.vpc", "*.vp" };
+	const SCP_vector<SCP_string> filters = {"*.vpc", "*.vp", "*.vp.xz", "*.zip"};
 #else
-	const SCP_vector<SCP_string> filters = { "*.[vV][pP][cC]", "*.[vV][pP]" };
+	const SCP_vector<SCP_string> filters = {"*.[vV][pP][cC]", "*.[vV][pP]", "*.[vV][pP].[xX][zZ]"};
 #endif
 
 	// now just setup all the root info
@@ -549,9 +584,11 @@ void cf_build_pack_list( cf_root *root )
 		new_root->path = s_root.path;
 		new_root->roottype = CF_ROOTTYPE_PACK;
 
+		cf_root_check_compression_info(new_root);
+
 #ifndef NDEBUG
 		uint chksum = 0;
-		cf_chksum_pack(s_root.path.c_str(), &chksum);
+		cf_chksum_pack(s_root.path.c_str(), &chksum, &new_root->compression_info);
 		mprintf(("Found root pack '%s' with a checksum of 0x%08x\n", s_root.path.c_str(), chksum));
 #endif
 	}
@@ -900,7 +937,7 @@ void cf_search_root_path(int root_index)
 			auto ext_idx = file.name.rfind('.');
 			auto orig_name = file.name;
 
-			if ( ext_idx != SCP_string::npos && SCP_string_lcase_equal_to()(file.name.substr(ext_idx), SCP_string(".lz41")) ) {
+			if (ext_idx != SCP_string::npos && ( SCP_string_lcase_equal_to()(file.name.substr(ext_idx), SCP_string(".lz41")) || SCP_string_lcase_equal_to()(file.name.substr(ext_idx), SCP_string(".xz")))) {
 				file.name = file.name.erase(ext_idx, file.name.length());
 				ext_idx = file.name.rfind('.');
 			}
@@ -929,6 +966,7 @@ void cf_search_root_path(int root_index)
 	mprintf(( "%i files\n", num_files ));
 }
 
+#define VP_HEADER_MAGIC 0x50565056
 
 typedef struct VP_FILE_HEADER {
 	char id[4];
@@ -969,44 +1007,27 @@ static int cf_add_pack_files(const int root_index, SCP_vector<_file_list_t> &fil
 	return static_cast<int>(files.size());
 }
 
-void cf_search_root_pack(int root_index)
+void cf_search_root_pack_vp(cf_root* root, FILE *fp, int root_index)
 {
 	int num_files = 0;
-	cf_root *root = cf_get_root(root_index);
-
-	Assert( root != NULL );
-
-	// Open data		
-	FILE *fp = fopen( root->path.c_str(), "rb" );
-	// Read the file header
-	if (!fp) {
-		return;
-	}
-
-	if ( filelength(fileno(fp)) < (int)(sizeof(VP_FILE_HEADER) + (sizeof(int) * 3)) ) {
-		mprintf(( "Skipping VP file ('%s') of invalid size...\n", root->path.c_str() ));
-		fclose(fp);
-		return;
-	}
 
 	VP_FILE_HEADER VP_header;
 
-	Assert( sizeof(VP_header) == 16 );
-	if (fread(&VP_header, sizeof(VP_header), 1, fp) != 1) {
+	Assert(sizeof(VP_header) == 16);
+	if (comp_compatible_fread(&VP_header, sizeof(VP_header), 1, fp, &root->compression_info) != 1) {
 		mprintf(("Skipping VP file ('%s') because the header could not be read...\n", root->path.c_str()));
 		fclose(fp);
 		return;
 	}
 
-	VP_header.version = INTEL_INT( VP_header.version ); //-V570
-	VP_header.index_offset = INTEL_INT( VP_header.index_offset ); //-V570
-	VP_header.num_files = INTEL_INT( VP_header.num_files ); //-V570
+	VP_header.version = INTEL_INT(VP_header.version);           //-V570
+	VP_header.index_offset = INTEL_INT(VP_header.index_offset); //-V570
+	VP_header.num_files = INTEL_INT(VP_header.num_files);       //-V570
 
-	mprintf(( "Searching root pack '%s' ... ", root->path.c_str() ));
+	mprintf(("Searching root pack '%s' ... ", root->path.c_str()));
 
 	// Read index info
-	fseek(fp, VP_header.index_offset, SEEK_SET);
-
+	comp_compatible_fseek(fp, VP_header.index_offset, SEEK_SET, &root->compression_info);
 
 	SCP_string search_path;
 	SCP_string sub_path;
@@ -1014,25 +1035,25 @@ void cf_search_root_pack(int root_index)
 
 	SCP_vector<_file_list_t> files;
 
-	files.reserve(256);		// should be set to a good baseline of files per path
+	files.reserve(256); // should be set to a good baseline of files per path
 
 	// Go through all the files
 	int i;
-	for (i=0; i<VP_header.num_files; i++ )	{
+	for (i = 0; i < VP_header.num_files; i++) {
 		VP_FILE find;
 
-		if (fread( &find, sizeof(VP_FILE), 1, fp ) != 1) {
+		if (comp_compatible_fread(&find, sizeof(VP_FILE), 1, fp, &root->compression_info) != 1) {
 			mprintf(("Failed to read file entry (currently in directory %s)!\n", search_path.c_str()));
 			break;
 		}
 
-		find.offset = INTEL_INT( find.offset ); //-V570
-		find.size = INTEL_INT( find.size ); //-V570
-		find.write_time = INTEL_INT( find.write_time ); //-V570
-		find.filename[sizeof(find.filename)-1] = '\0';
+		find.offset = INTEL_INT(find.offset);         //-V570
+		find.size = INTEL_INT(find.size);             //-V570
+		find.write_time = INTEL_INT(find.write_time); //-V570
+		find.filename[sizeof(find.filename) - 1] = '\0';
 
-		if ( find.size == 0 )	{
-			if ( !stricmp(find.filename, "..")) {
+		if (find.size == 0) {
+			if (!stricmp(find.filename, "..")) {
 				auto end = search_path.rfind(DIR_SEPARATOR_CHAR);
 
 				if (end != SCP_string::npos) {
@@ -1041,7 +1062,7 @@ void cf_search_root_pack(int root_index)
 					search_path.clear();
 				}
 			} else {
-				if ( !search_path.empty() && (search_path.back() != DIR_SEPARATOR_CHAR) ) {
+				if (!search_path.empty() && (search_path.back() != DIR_SEPARATOR_CHAR)) {
 					search_path += DIR_SEPARATOR_CHAR;
 				}
 
@@ -1058,20 +1079,19 @@ void cf_search_root_pack(int root_index)
 
 			path_type = rval;
 
-			if ( (path_type > CF_TYPE_DATA) && Pathtypes[path_type].path &&
-				 (search_path.length() > strlen(Pathtypes[path_type].path)) )
-			{
-				sub_path = search_path.substr(strlen(Pathtypes[path_type].path)+1) + DIR_SEPARATOR_STR;
+			if ((path_type > CF_TYPE_DATA) && Pathtypes[path_type].path &&
+				(search_path.length() > strlen(Pathtypes[path_type].path))) {
+				sub_path = search_path.substr(strlen(Pathtypes[path_type].path) + 1) + DIR_SEPARATOR_STR;
 			} else {
 				sub_path.clear();
 			}
 
-			//mprintf(( "Current dir = '%s'\n", search_path.c_str() ));
+			// mprintf(( "Current dir = '%s'\n", search_path.c_str() ));
 		} else {
 			if (path_type != CF_TYPE_INVALID) {
-				char *ext = strrchr( find.filename, '.' );
-				if ( ext )	{
-					if ( is_ext_in_list( Pathtypes[path_type].extensions, ext ) )	{
+				char* ext = strrchr(find.filename, '.');
+				if (ext) {
+					if (is_ext_in_list(Pathtypes[path_type].extensions, ext)) {
 						// Found a file!!!!
 						_file_list_t file;
 
@@ -1084,7 +1104,7 @@ void cf_search_root_pack(int root_index)
 
 						files.push_back(file);
 
-						//mprintf(( "Found pack file '%s'\n", find.filename ));
+						// mprintf(( "Found pack file '%s'\n", find.filename ));
 					}
 				}
 			}
@@ -1095,9 +1115,141 @@ void cf_search_root_pack(int root_index)
 	num_files += cf_add_pack_files(root_index, files);
 	files.clear();
 
-	fclose(fp);
+	mprintf(("%i files\n", num_files));
+}
 
-	mprintf(( "%i files\n", num_files ));
+void cf_search_root_pack_zip(cf_root* root, FILE* fp, int root_index) {
+	int num_files = 0;
+	int num_inv_files = 0;
+	SCP_vector<zip_pack_file> files_in_zip;
+	mprintf(("Searching root pack '%s' ... ", root->path.c_str()));
+	auto ret = zip_get_files(fp, root->path, &files_in_zip);
+
+	if (ret == ZIP_OK)
+	{
+		SCP_string sub_path;
+		int path_type = CF_TYPE_INVALID;
+		SCP_vector<_file_list_t> files;
+		
+		for (auto& zf : files_in_zip)
+		{
+			if (zf.type == 0) 
+			{
+				//FOLDER
+				auto rval = cfile_get_path_type(zf.file_name);
+
+				// if the pathtype root changed then add all of the files
+				if (rval != path_type) {
+					num_files += cf_add_pack_files(root_index, files);
+					files.clear();
+				}
+
+				path_type = rval;
+
+				if ((path_type > CF_TYPE_DATA) && Pathtypes[path_type].path &&
+					(zf.file_name.length() > strlen(Pathtypes[path_type].path))) {
+					sub_path = zf.file_name.substr(strlen(Pathtypes[path_type].path) + 1) + DIR_SEPARATOR_STR;
+				} else {
+					sub_path.clear();
+				}
+			}
+			else
+			{
+				//FILE
+				// STORE = 0, XZ = 95
+				if (zf.compression_method != 0 && zf.compression_method != 95) {
+					// Unsupported compression method
+					mprintf(("ZIP file ('%s'), skipping file ('%s') with an unsupported compression method ('%d'), only methods STORE (0) and XZ (95) are supported...\n", 
+						root->path.c_str(), zf.file_name.c_str(), zf.compression_method));
+					num_inv_files++;
+				} 
+				else if (path_type != CF_TYPE_INVALID) 
+				{
+					if (is_ext_in_list(Pathtypes[path_type].extensions, zf.file_ext.c_str())) {
+						_file_list_t file;
+
+						file.name = zf.file_name.c_str();
+						file.m_time = 0;
+						file.size = zf.compressed_size;
+						file.sub_path = sub_path;
+						file.pathtype = path_type;
+						//The local file header will need to be read when opening this file to point it to the right offset
+						file.offset = (int)zf.local_header_offset; // This will limit zips to 2GB max
+
+						files.push_back(file);
+					}
+				}
+			}
+		}
+		// add final set of files
+		num_files += cf_add_pack_files(root_index, files);
+		files.clear();
+	}
+	else
+	{
+		// Zip parsing error
+		mprintf(("Skipping ZIP file ('%s'), an error has ocurred while parsing the file...\n", root->path.c_str()));
+	}
+	files_in_zip.clear();
+	mprintf(("%i files\n", num_files));
+	if (num_inv_files > 0)
+	{
+		Warning(LOCATION, "\nFailed to load %d files from zip pack '%s'.\nOnly STORE (No compression) or XZ methods are supported for zips.\nXZ mode with 1MB dictionary and 1MB solid blocks is the recommended setting.\n",
+			num_inv_files,
+			root->path.c_str());
+	}
+}
+
+void cf_search_root_pack(int root_index)
+{
+	cf_root *root = cf_get_root(root_index);
+
+	Assert( root != NULL );
+
+	// Open data		
+	FILE *fp = fopen( root->path.c_str(), "rb" );
+	// Read the file header
+	if (!fp) {
+		return;
+	}
+
+	if (root->compression_info.header != COMP_HEADER_IS_UNKNOWN) {
+		root->compression_info.uncompressed_pos = 0; // In case the file was read previusly
+	}
+
+	auto file_len = root->compression_info.header != COMP_HEADER_IS_UNKNOWN ? root->compression_info.uncompressed_size : filelength(fileno(fp));
+
+	if (file_len > sizeof(int))
+	{
+		int magic;
+		comp_compatible_fread(&magic, sizeof(int), 1, fp, &root->compression_info);
+		comp_compatible_fseek(fp, 0, SEEK_SET, &root->compression_info);
+		switch (magic)
+		{
+			case ZIP_HEADER_MAGIC:
+				if (file_len < ZIP_MIN_SIZE) {
+					mprintf(("Skipping ZIP file ('%s') of invalid size...\n", root->path.c_str()));
+				} else {
+					cf_search_root_pack_zip(root, fp, root_index);
+				}
+				break;
+			case VP_HEADER_MAGIC:
+				if (file_len < (int)(sizeof(VP_FILE_HEADER) + (sizeof(int) * 3))) {
+					mprintf(("Skipping VP file ('%s') of invalid size...\n", root->path.c_str()));
+				} else {
+					cf_search_root_pack_vp(root, fp, root_index);
+				}
+				break;
+			default:
+				// unknown type
+				mprintf(("File ('%s') has an unknown magic number, skipping...\n", root->path.c_str()));
+		}
+	}
+	else 
+	{
+		mprintf(("Skipping file ('%s') of invalid size...\n", root->path.c_str()));
+	}
+	fclose(fp);
 }
 
 void cf_search_memory_root(int root_index) {
@@ -1421,7 +1573,10 @@ CFileLocation cf_find_file_location(const char* filespec, int pathtype, uint32_t
 			} else {
 				// File is in a pack file
 				cf_root *r = cf_get_root(f->root_index);
-
+				if (r->compression_info.header != COMP_HEADER_IS_UNKNOWN)
+				{
+					res.pack_ci_ptr = &r->compression_info;
+				}
 				res.full_name = r->path;
 			}
 
@@ -1646,7 +1801,10 @@ CFileLocationExt cf_find_file_location_ext(const char *filename, const int ext_n
 				} else {
 					// File is in a pack file
 					cf_root *r = cf_get_root(f->root_index);
-
+					if (r->compression_info.header != COMP_HEADER_IS_UNKNOWN)
+					{
+						res.pack_ci_ptr = &r->compression_info;
+					}
 					res.full_name = r->path;
 				}
 
@@ -2493,7 +2651,7 @@ void cfile_spew_pack_file_crcs()
 			continue;
 
 		chksum = 0;
-		cf_chksum_pack(cur_root->path.c_str(), &chksum, true);
+		cf_chksum_pack(cur_root->path.c_str(), &chksum, &cur_root->compression_info, true);
 
 		fprintf(out, "  %s  --  0x%x\n", cur_root->path.c_str(), chksum);
 	}
