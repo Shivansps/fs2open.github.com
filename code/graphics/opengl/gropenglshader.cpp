@@ -169,7 +169,7 @@ void opengl_shader_shutdown()
 
 static SCP_string opengl_shader_get_header(shader_type type_id, int flags, bool has_geo_shader) {
 	SCP_stringstream sflags;
-	#ifndef __ANDROID__
+	#ifndef USE_OPENGL_ES
 	sflags << "#version " << GLSL_version << " core\n";
 	sflags << "#define OPENGL\n";
 	#else
