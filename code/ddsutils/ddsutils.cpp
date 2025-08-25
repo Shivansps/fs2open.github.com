@@ -3,6 +3,9 @@
 #include "cfile/cfile.h"
 #include "graphics/2d.h"
 #include "osapi/osregistry.h"
+#ifdef USE_OPENGL_ES
+#include "graphics/opengl/es_compatibility.h"
+#endif
 
 #define BCDEC_IMPLEMENTATION 1
 PUSH_SUPPRESS_WARNINGS

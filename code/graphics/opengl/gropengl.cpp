@@ -42,12 +42,15 @@
 #include "osapi/osapi.h"
 #include "osapi/osregistry.h"
 #include "pngutils/pngutils.h"
+#ifdef USE_OPENGL_ES
+#include "es_compatibility.h"
+#endif
 
 #include "backends/imgui_impl_opengl3.h"
 
 #include <glad/glad.h>
 
-// minimum GL version we can reliably support is 3.2
+// minimum GL / GLES version we can reliably support is 3.2
 static const int MIN_REQUIRED_GL_VERSION = 32;
 
 #ifndef USE_OPENGL_ES

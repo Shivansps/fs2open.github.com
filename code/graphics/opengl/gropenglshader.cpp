@@ -28,6 +28,9 @@
 #include "math/vecmat.h"
 #include "mod_table/mod_table.h"
 #include "render/3d.h"
+#ifdef USE_OPENGL_ES
+#include "es_compatibility.h"
+#endif
 
 #include <jansson.h>
 #include <md5.h>
@@ -173,9 +176,9 @@ static SCP_string opengl_shader_get_header(shader_type type_id, int flags, bool 
 	sflags << "#version " << GLSL_version << " core\n";
 	sflags << "#define OPENGL\n";
 	#else
-	sflags << "#version " << GLSL_version << " es\n";
+	sflags << "#version " << GLSL_version << " es\n"; 
 	sflags << "precision highp float;" << "\n";
-	sflags << "precision highp int;" << "\n";
+	sflags << "precision highp int;" << "\n"; 
 	sflags << "precision highp sampler2DArray;" << "\n";
 	sflags << "precision highp sampler2D;" << "\n";
 	sflags << "precision highp samplerCube;" << "\n";
@@ -485,11 +488,13 @@ void opengl_compile_shader_actual(shader_type sdr, const uint &flags, opengl_sha
 			}
 
 			// bind fragment data locations before we link the shader
+			#ifndef USE_OPENGL_ES
 			glBindFragDataLocation(program->getShaderHandle(), 0, "fragOut0");
 			glBindFragDataLocation(program->getShaderHandle(), 1, "fragOut1");
 			glBindFragDataLocation(program->getShaderHandle(), 2, "fragOut2");
 			glBindFragDataLocation(program->getShaderHandle(), 3, "fragOut3");
 			glBindFragDataLocation(program->getShaderHandle(), 4, "fragOut4");
+			#endif
 
 			if (do_shader_caching()) {
 				// Enable shader caching
