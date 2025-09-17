@@ -1809,3 +1809,9 @@ add_file_folder("Windows Stubs"
 	windows_stub/config.h
 	windows_stub/stubs.cpp
 )
+
+# ktx utils files
+add_file_folder("ktxutils"
+	ktxutils/ktxutils.cpp
+	ktxutils/ktxutils.h
+)
