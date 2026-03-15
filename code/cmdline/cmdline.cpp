@@ -575,7 +575,7 @@ bool Cmdline_slow_frames_ok = false;
 bool Cmdline_lua_devmode = false;
 bool Cmdline_override_data = false;
 bool Cmdline_show_imgui_debug = false;
-bool Cmdline_vulkan = false;
+bool Cmdline_vulkan = true;
 int Cmdline_multithreading = 1;
 
 // Other
