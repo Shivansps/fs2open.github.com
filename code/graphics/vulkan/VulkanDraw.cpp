@@ -1,5 +1,5 @@
 #include "VulkanDraw.h"
-
+#include <ktxutils/ktxutils.h>
 #include <algorithm>
 #include <array>
 
@@ -998,7 +998,7 @@ bool VulkanDrawManager::bindMaterialTextures(material* mat, DescriptorWriter* wr
 		// If texture isn't loaded, try to load it on-demand (like OpenGL does)
 		if (!texSlot || !texSlot->imageView) {
 			// Determine bpp and flags - matches OpenGL's opengl_determine_bpp_and_flags
-			ushort lockFlags = 0;
+			uint lockFlags = 0;
 			int bpp = 16;
 
 			switch (bitmapType) {
@@ -1028,6 +1028,21 @@ bool VulkanDrawManager::bindMaterialTextures(material* mat, DescriptorWriter* wr
 						case DDS_DXT5:
 							bpp = 32;
 							lockFlags = BMP_TEX_DXT5;
+							break;
+						case KTX_ETC2_RGB:
+						case KTX_ETC2_SRGB:
+							bpp = 24;
+							lockFlags = BMP_TEX_ETC2_RGB8;
+							break;
+						case KTX_ETC2_RGBA_EAC:
+						case KTX_ETC2_SRGBA_EAC:
+							bpp = 32;
+							lockFlags = BMP_TEX_ETC2_RGBA8;
+							break;
+						case KTX_ETC2_RGB_A1:
+						case KTX_ETC2_SRGB_A1:
+							bpp = 24;
+							lockFlags = BMP_TEX_ETC2_RGBA1;
 							break;
 						default:
 							bpp = 32;
