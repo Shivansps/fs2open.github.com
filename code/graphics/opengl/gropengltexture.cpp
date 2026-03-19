@@ -797,7 +797,7 @@ static GLenum opengl_get_internal_format(int handle, int bitmap_type, int bpp) {
 	}
 }
 
-void opengl_determine_bpp_and_flags(int bitmap_handle, int bitmap_type, ushort& flags, int& bpp) {
+void opengl_determine_bpp_and_flags(int bitmap_handle, int bitmap_type, uint& flags, int& bpp) {
 	flags = 0;
 	bpp = 16;
 	switch (bitmap_type) {
@@ -1079,7 +1079,7 @@ int opengl_create_texture(int bitmap_handle, int bitmap_type, tcache_slot_opengl
 
 	tslot->wrap_mode = GL_CLAMP_TO_EDGE;
 
-	ushort bitmap_flags;
+	uint bitmap_flags;
 	int bits_per_pixel;
 	opengl_determine_bpp_and_flags(animation_begin, bitmap_type, bitmap_flags, bits_per_pixel);
 
@@ -1091,7 +1091,7 @@ int opengl_create_texture(int bitmap_handle, int bitmap_type, tcache_slot_opengl
 #ifndef NDEBUG
         // I'm not sure if these values are consistent across the whole animation but they really should be.
 		// This should catch any instances where this assumption isn't right
-		ushort debug_flags = 0;
+		uint debug_flags = 0;
 		int debug_bpp;
 		opengl_determine_bpp_and_flags(frame, bitmap_type, debug_flags, debug_bpp);
 
