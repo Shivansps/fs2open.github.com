@@ -39,6 +39,10 @@ layout(location = 2) in vec4 vertTexCoord;
 layout(location = 0) out vec4 fragTexCoord;
 layout(location = 1) out vec4 fragColor;
 
+#ifdef USE_SW_CLIP_DISTANCE
+layout(location = 3) out float vClipDist;
+#endif
+
 #else
 
 out float gl_ClipDistance[1];
@@ -58,13 +62,21 @@ void main()
 	gl_Position = projMatrix * modelViewMatrix * vertPosition;
 
 	if (clipEnabled != 0u) {
+#ifdef USE_SW_CLIP_DISTANCE
+		vClipDist = (clipEnabled != uint(0)) ? dot(clipEquation, modelMatrix * vertPosition) : 1.0;
+#else
 		gl_ClipDistance[0] = dot(clipEquation, modelMatrix * vertPosition);
+#endif
 	} else {
 #ifdef VULKAN
 		// Vulkan has no glEnable(GL_CLIP_DISTANCE0) equivalent — clip distances are
 		// always evaluated when declared in the shader.  Must write a positive value
 		// when clipping is disabled to prevent undefined-value vertex culling.
+#ifdef USE_SW_CLIP_DISTANCE
+		vClipDist = 1.0;
+#else
 		gl_ClipDistance[0] = 1.0;
+#endif
 #endif
 	}
 }

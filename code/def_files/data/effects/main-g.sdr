@@ -108,6 +108,10 @@ in VertexOutput {
 	float fogDist;
 #prereplace ENDIF_FLAG_COMPILED MODEL_SDR_FLAG_FOG
 
+#ifdef USE_SW_CLIP_DISTANCE
+    float vClipDist;
+#endif
+
 #ifdef MODEL_SDR_FLAG_SHADOW_MAP
  #if !defined(GL_ARB_gpu_shader5)
 	float instance;
@@ -131,6 +135,10 @@ out VertexOutput {
 #prereplace IF_FLAG_COMPILED MODEL_SDR_FLAG_FOG
 	float fogDist;
 #prereplace ENDIF_FLAG_COMPILED MODEL_SDR_FLAG_FOG
+
+#ifdef USE_SW_CLIP_DISTANCE
+    float vClipDist;
+#endif
 
 	vec4 position;
 	vec3 normal;
@@ -188,9 +196,14 @@ out VertexOutput {
 				vertOut.shadowPos = vertIn[vert].shadowPos;
 			#prereplace ENDIF_FLAG //MODEL_SDR_FLAG_SHADOWS
 
-			if (use_clip_plane != 0) {
-				gl_ClipDistance[0] = gl_in[vert].gl_ClipDistance[0];
-			}
+			#ifdef USE_SW_CLIP_DISTANCE
+				vertOut.vClipDist = vertIn[vert].vClipDist;
+			#else
+				if (use_clip_plane != 0) {
+					gl_ClipDistance[0] = gl_in[vert].gl_ClipDistance[0];
+				}
+			#endif
+
 			EmitVertex();
 		}
 		EndPrimitive();
@@ -242,9 +255,13 @@ out VertexOutput {
                 	vertOut.shadowPos = vertIn[vert].shadowPos;
                 #prereplace ENDIF_FLAG //MODEL_SDR_FLAG_SHADOWS
 
-				if (use_clip_plane != 0) {
-					gl_ClipDistance[0] = gl_in[vert].gl_ClipDistance[0];
-				}
+				#ifdef USE_SW_CLIP_DISTANCE
+					vertOut.vClipDist = vertIn[vert].vClipDist;
+				#else
+					if (use_clip_plane != 0) {
+						gl_ClipDistance[0] = gl_in[vert].gl_ClipDistance[0];
+					}
+				#endif
 				EmitVertex();
 			}
 

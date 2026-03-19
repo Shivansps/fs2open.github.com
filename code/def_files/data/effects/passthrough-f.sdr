@@ -6,6 +6,10 @@ layout(location = 0) in vec4 fragTexCoord;
 layout(location = 1) in vec4 fragColor;
 layout(location = 0) out vec4 fragOut0;
 
+#ifdef USE_SW_CLIP_DISTANCE
+layout(location = 3) in float vClipDist;
+#endif
+
 layout(set = 1, binding = 1) uniform sampler2DArray baseMap;
 
 layout(std140, set = 2, binding = 0) uniform genericData {
@@ -35,6 +39,10 @@ layout (std140) uniform genericData {
 
 void main()
 {
+#ifdef USE_SW_CLIP_DISTANCE
+	if (vClipDist < 0.0) discard;
+#endif
+
 #ifdef VULKAN
 	vec4 baseColor = texture(baseMap, vec3(fragTexCoord.xy, float(baseMapIndex)));
 #else

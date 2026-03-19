@@ -121,6 +121,9 @@ layout(location = 0) in VertexOutput {
 	float fogDist;
 	vec4 shadowUV[4];
 	vec4 shadowPos;
+	#ifdef USE_SW_CLIP_DISTANCE
+    float vClipDist;
+	#endif
 } vertIn;
 
 layout(location = 0) out vec4 fragOut0;
@@ -238,6 +241,10 @@ vec3 CalculateLighting(vec3 normal, vec3 diffuseMaterial, vec3 specularMaterial,
 
 void main()
 {
+#ifdef USE_SW_CLIP_DISTANCE
+	 if (vertIn.vClipDist < 0.0) discard;
+#endif
+	
 	#ifdef MODEL_SDR_FLAG_SHADOW_MAP
 		// need depth and depth squared for variance shadow maps
 		fragOut0 = vec4(vertIn.position.z, vertIn.position.z * vertIn.position.z * VARIANCE_SHADOW_SCALE_INV, 0.0, 1.0);

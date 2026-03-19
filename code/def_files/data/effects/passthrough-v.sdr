@@ -5,6 +5,10 @@ layout(location = 2) in vec4 vertTexCoord;
 layout(location = 0) out vec4 fragTexCoord;
 layout(location = 1) out vec4 fragColor;
 
+#ifdef USE_SW_CLIP_DISTANCE
+layout(location = 3) out float vClipDist;
+#endif
+
 layout(std140, set = 2, binding = 0) uniform genericData {
 	mat4 modelMatrix;
 	vec4 color;
@@ -22,6 +26,9 @@ layout(std140, set = 2, binding = 1) uniform matrixData {
 	mat4 modelViewMatrix;
 	mat4 projMatrix;
 };
+
+
+
 #else
 in vec4 vertPosition;
 in vec4 vertTexCoord;
@@ -41,6 +48,10 @@ void main()
 	fragColor = vertColor;
 	gl_Position = projMatrix * modelViewMatrix * vertPosition;
 #ifdef VULKAN
-	gl_ClipDistance[0] = clipEnabled != 0u ? dot(modelMatrix * vertPosition, clipEquation) : 1.0;
+	#ifdef USE_SW_CLIP_DISTANCE
+		vClipDist = clipEnabled != 0u ? dot(modelMatrix * vertPosition, clipEquation) : 1.0;
+	#else
+		gl_ClipDistance[0] = clipEnabled != 0u ? dot(modelMatrix * vertPosition, clipEquation) : 1.0;
+	#endif
 #endif
 }

@@ -29,7 +29,13 @@ layout(location = 1) in vec4 fragColor;
 
 layout(location = 0) out vec4 fragOut0;
 
+#ifdef USE_SW_CLIP_DISTANCE
+layout(location = 3) in float vClipDist;
+#endif
+
 #else
+
+
 
 uniform sampler2DArray baseMap;
 
@@ -43,6 +49,12 @@ out vec4 fragOut0;
 
 void main()
 {
+	#ifdef USE_SW_CLIP_DISTANCE
+	if (clipEnabled != uint(0) && vClipDist < 0.0) {
+		discard;
+	}
+	#endif
+
 	vec4 baseColor = texture(baseMap, vec3(fragTexCoord.xy, float(baseMapIndex)));
 	if(alphaThreshold > baseColor.a) discard;
 	baseColor.rgb = (srgb == 1) ? srgb_to_linear(baseColor.rgb) : baseColor.rgb;

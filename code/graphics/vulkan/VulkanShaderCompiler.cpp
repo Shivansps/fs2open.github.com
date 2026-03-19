@@ -11,7 +11,11 @@
 #include <md5.h>
 #include <shaderc/shaderc.h>
 
+
+
 namespace graphics::vulkan {
+
+extern bool hwClipDistance;
 
 // ========== VulkanShadercLibrary ==========
 
@@ -149,6 +153,11 @@ SCP_string VulkanShaderCompiler::buildHeader(vk::ShaderStageFlagBits /*stage*/, 
 	// Blinn-Phong lighting model (matches OpenGL's opengl_shader_get_header)
 	if (Detail.lighting < 3) {
 		header += "#define FLAG_LIGHT_MODEL_BLINN_PHONG\n";
+	}
+	
+	// SW fallback for shaderClipDistance
+	if (!hwClipDistance) {
+		header += "#define USE_SW_CLIP_DISTANCE\n";
 	}
 
 	// Post-processing shaders need special header injection (matching OpenGL's

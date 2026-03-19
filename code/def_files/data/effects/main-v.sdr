@@ -130,6 +130,9 @@ layout(location = 0) out VertexOutput {
 	float fogDist;
 	vec4 shadowUV[4];
 	vec4 shadowPos;
+	#ifdef USE_SW_CLIP_DISTANCE
+    float vClipDist;
+	#endif
 } vertOut;
 #else
 #prereplace IF_FLAG_COMPILED MODEL_SDR_FLAG_TRANSFORM
@@ -277,11 +280,13 @@ void main()
 #endif
 
 	// Clip plane
-	if(use_clip_plane != 0) {
-		gl_ClipDistance[0] = dot(clip_equation, modelMatrix * orient * vertex);
-	} else {
-		gl_ClipDistance[0] = 1.0;
-	}
+	float clipValue = (use_clip_plane != 0) ? dot(clip_equation, modelMatrix * orient * vertex) : 1.0;
+
+	#ifdef USE_SW_CLIP_DISTANCE
+		vertOut.vClipDist = clipValue;
+	#else
+		gl_ClipDistance[0] = clipValue;
+	#endif
 
 	#ifndef MODEL_SDR_FLAG_SHADOW_MAP
 		vertOut.position = position;

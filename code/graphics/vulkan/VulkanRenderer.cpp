@@ -29,6 +29,8 @@ extern float flFrametime;
 namespace graphics {
 namespace vulkan {
 
+bool hwClipDistance = true;
+
 namespace {
 #if SDL_SUPPORTS_VULKAN
 const char* EngineName = "FreeSpaceOpen";
@@ -297,6 +299,12 @@ bool VulkanRenderer::initialize()
 	if (!pickPhysicalDevice(deviceValues)) {
 		mprintf(("Could not find suitable physical Vulkan device.\n"));
 		return false;
+	}
+	
+	// Check shaderClipDistance support
+	hwClipDistance = deviceValues.features.shaderClipDistance;
+	if (!hwClipDistance) {
+		mprintf(("Vulkan: Unsupported Hardware Feature: shaderClipDistance, using software fallback.\n"));
 	}
 
 	// Validate MSAA sample count against device limits
