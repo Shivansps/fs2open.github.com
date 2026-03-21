@@ -1,5 +1,7 @@
 //? #version 150
+#ifdef OPENGL
 #include "shadows.sdr" //! #include "shadows.sdr"
+#endif
 #include "lighting.sdr" //! #include "lighting.sdr"
 #include "gamma.sdr" //! #include "gamma.sdr"
 #include "z-compress.sdr" //! #include "z-compress.sdr"
@@ -110,17 +112,12 @@ layout(set = 1, binding = 1) uniform sampler2DArray materialTextures[16];
 #define sAmbientmap materialTextures[5]
 #define sMiscmap materialTextures[6]
 
-layout(set = 0, binding = 2) uniform sampler2DArray shadow_map;
-layout(set = 1, binding = 5) uniform sampler2D sFramebuffer;
-
 layout(location = 0) in VertexOutput {
 	vec4 position;
 	vec3 normal;
 	vec4 texCoord;
 	mat3 tangentMatrix;
 	float fogDist;
-	vec4 shadowUV[4];
-	vec4 shadowPos;
 	#ifdef USE_SW_CLIP_DISTANCE
     float vClipDist;
 	#endif
@@ -131,6 +128,7 @@ layout(location = 1) out vec4 fragOut1;
 layout(location = 2) out vec4 fragOut2;
 layout(location = 3) out vec4 fragOut3;
 layout(location = 4) out vec4 fragOut4;
+
 #else
 #prereplace IF_FLAG_COMPILED MODEL_SDR_FLAG_DIFFUSE
 uniform sampler2DArray sBasemap;
@@ -181,6 +179,7 @@ out vec4 fragOut4;
 #endif
 
 #endif
+
 
 vec3 FresnelLazarovEnv(vec3 specColor, vec3 view, vec3 normal, float gloss)
 {
@@ -247,7 +246,12 @@ void main()
 	
 	#ifdef MODEL_SDR_FLAG_SHADOW_MAP
 		// need depth and depth squared for variance shadow maps
-		fragOut0 = vec4(vertIn.position.z, vertIn.position.z * vertIn.position.z * VARIANCE_SHADOW_SCALE_INV, 0.0, 1.0);
+		#ifdef VULKAN
+			float shadowDepth = vertIn.position.z;
+			fragOut0 = vec4(shadowDepth, shadowDepth * shadowDepth * (1.0 / 1000000.0), 0.0, 1.0);
+		#else
+			fragOut0 = vec4(vertIn.position.z, vertIn.position.z * vertIn.position.z * VARIANCE_SHADOW_SCALE_INV, 0.0, 1.0);
+		#endif
 		return;
 	#else
 
@@ -381,9 +385,11 @@ void main()
 	#prereplace IF_NOT_FLAG MODEL_SDR_FLAG_DEFERRED
 		#prereplace IF_FLAG MODEL_SDR_FLAG_LIGHT
 			float shadow = 1.0;
+#ifndef VULKAN
 			#prereplace IF_FLAG MODEL_SDR_FLAG_SHADOWS
 				shadow = getShadowValue(shadow_map, -vertIn.position.z, vertIn.shadowPos.z, vertIn.shadowUV, fardist, middist, neardist, veryneardist);
 			#prereplace ENDIF_FLAG //MODEL_SDR_FLAG_SHADOWS
+#endif
 			baseColor.rgb = CalculateLighting(normal, baseColor.rgb, specColor.rgb, glossData, fresnelFactor, shadow, aoFactors.x);
 		#prereplace ELSE_FLAG //MODEL_SDR_FLAG_LIGHT
 			#prereplace IF_FLAG MODEL_SDR_FLAG_SPEC
@@ -450,11 +456,13 @@ void main()
 		vec2 screenPos = gl_FragCoord.xy * vec2(vpwidth,vpheight);
 		baseColor.a = baseColor.a;
 		float cloak_interp = (sin(vertIn.position.x*vertIn.position.w*0.005+anim_timer*20.0)*sin(vertIn.position.y*vertIn.position.w*0.005)*0.5)-0.5;
+#ifndef VULKAN
 		#prereplace IF_FLAG MODEL_SDR_FLAG_LIGHT
 			baseColor.rgb = mix(texture(sFramebuffer, screenPos + distort*anim_timer + anim_timer*0.1*normal.xy).rgb,baseColor.rgb,clamp(cloak_interp+anim_timer*2.0,0.0,1.0));
 		#prereplace ELSE_FLAG //MODEL_SDR_FLAG_LIGHT
 			baseColor.rgb = mix(texture(sFramebuffer, screenPos + distort*anim_timer + anim_timer*0.1*vertIn.normal.xy).rgb,baseColor.rgb,clamp(cloak_interp+anim_timer*2.0,0.0,1.0));
 		#prereplace ENDIF_FLAG //MODEL_SDR_FLAG_LIGHT
+#endif
 	}
 
 	#prereplace IF_NOT_FLAG MODEL_SDR_FLAG_DEFERRED

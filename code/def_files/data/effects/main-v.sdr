@@ -2,12 +2,11 @@
 #ifndef VULKAN
 //? #version 150
 #extension GL_ARB_gpu_shader5: enable
+#include "shadows.sdr"
 #endif
 #if defined(VULKAN) && defined(MODEL_SDR_FLAG_SHADOW_MAP)
 #extension GL_ARB_shader_viewport_layer_array : enable
 #endif
-#include "shadows.sdr"
-
 #conditional_include +"LARGE_SHADER" "main_large.sdr"
 #conditional_include -"LARGE_SHADER" "main_small.sdr"
 
@@ -18,6 +17,7 @@ layout(location = 2) in vec4 vertTexCoord;
 layout(location = 3) in vec3 vertNormal;
 layout(location = 4) in vec4 vertTangent;
 layout(location = 5) in float vertModelID;
+
 #else
 in vec4 vertPosition;
 in vec4 vertTexCoord;
@@ -128,8 +128,6 @@ layout(location = 0) out VertexOutput {
 	vec4 texCoord;
 	mat3 tangentMatrix;
 	float fogDist;
-	vec4 shadowUV[4];
-	vec4 shadowPos;
 	#ifdef USE_SW_CLIP_DISTANCE
     float vClipDist;
 	#endif
@@ -185,6 +183,9 @@ void main()
 	vec3 normal;
 	vec4 texCoord;
 	mat4 orient = mat4(1.0);
+#ifndef VULKAN
+	mat4 scale = mat4(1.0);
+#endif
 	bool clipModel = false;
 
 	// Transform loading
@@ -241,7 +242,6 @@ void main()
 	#else
 		gl_Position = projMatrix * position;
 	#endif
-#endif
 	#prereplace IF_FLAG MODEL_SDR_FLAG_SHADOWS
 		vec4 shadowPos = shadow_mv_matrix * modelMatrix * orient * vertPosition;
 		vertOut.shadowPos = shadow_mv_matrix * modelMatrix * orient * vertPosition;
@@ -250,6 +250,7 @@ void main()
 		vertOut.shadowUV[2] = transformToShadowMap(shadow_proj_matrix[2], 2, shadowPos);
 		vertOut.shadowUV[3] = transformToShadowMap(shadow_proj_matrix[3], 3, shadowPos);
 	#prereplace ENDIF_FLAG //MODEL_SDR_FLAG_SHADOWS
+#endif
 
 	// Setup stuff for normal maps and envmaps
 	vec3 t = normalize(mat3(modelViewMatrix) * mat3(orient) * vertTangent.xyz);
