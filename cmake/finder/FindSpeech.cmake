@@ -11,6 +11,10 @@ if (WIN32)
 	endif()
 elseif(APPLE)
 	# it should just work
+elseif(UNIX)
+	# speech-dispatcher
+	find_package(Speechd REQUIRED)
+	target_link_libraries(speech INTERFACE Speechd::Speechd)
 else()
 	message(SEND_ERROR "Text to Speech is not supported on this platform!")
 endif()

@@ -1629,12 +1629,15 @@ if (WIN32)
 		${file_root_sound}
 		sound/speech_win.cpp
 	)
-endif()
-
-if (APPLE)
+elseif (APPLE)
 	add_file_folder("Sound"
 		${file_root_sound}
 		sound/speech_mac.cpp
+	)
+elseif (UNIX)
+	add_file_folder("Sound"
+		${file_root_sound}
+		sound/speech_linux.cpp
 	)
 endif()
 
