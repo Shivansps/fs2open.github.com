@@ -15,7 +15,7 @@
 
 bool speech_init();
 void speech_deinit();
-bool speech_play(const char *text);
+bool speech_play(const SCP_string& text);
 bool speech_pause();
 bool speech_resume();
 bool speech_stop();
@@ -31,7 +31,7 @@ SCP_vector<SCP_string> speech_enumerate_voices();
 
 inline bool speech_init() { return false; }
 inline void speech_deinit() {}
-inline bool speech_play(const char* /*text*/) { return false; }
+inline bool speech_play(const SCP_string& /*text*/) { return false; }
 inline bool speech_pause() { return false; }
 inline bool speech_resume() { return false; }
 inline bool speech_stop() { return false; }

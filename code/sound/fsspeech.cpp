@@ -166,6 +166,22 @@ static auto SpeechMultiOption = options::OptionBuilder<bool>("Speech.Multi",
 	.importance(0)
 	.finish();
 
+void sanitize_text(const char* input, SCP_string& output) {
+	output.clear();
+	bool saw_dollar = false;
+	for (auto ch : unicode::codepoint_range(input)) {
+		if (ch == UNICODE_CHAR('$')) {
+			saw_dollar = true;
+			continue;
+		}
+		else if (saw_dollar) {
+			saw_dollar = false;
+			continue;
+		}
+		unicode::encode(ch, std::back_inserter(output));
+	}
+}
+
 bool fsspeech_init()
 {
 	if (speech_inited) {
@@ -225,6 +241,11 @@ void fsspeech_deinit()
 
 void fsspeech_play(int type, const char *text)
 {
+	if (text == nullptr) {
+		nprintf(("Speech", "Not playing speech because passed text is null.\n"));
+		return;
+	}
+
 	if (!speech_inited) {
 		nprintf(("Speech", "Aborting fsspech_play because speech_inited is false.\n"));
 		return;
@@ -240,7 +261,10 @@ void fsspeech_play(int type, const char *text)
 		return;
 	}
 
-	speech_play(text);
+	SCP_string sanitized_string;
+	sanitize_text(text, sanitized_string);
+
+	speech_play(sanitized_string);
 }
 
 void fsspeech_stop()

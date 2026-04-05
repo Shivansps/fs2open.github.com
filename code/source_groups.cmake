@@ -1619,11 +1619,17 @@ add_file_folder("Sound"
 	sound/rtvoice.h
 	sound/sound.cpp
 	sound/sound.h
-	sound/speech.cpp
 	sound/speech.h
 	sound/voicerec.cpp
 	sound/voicerec.h
 )
+
+if (WIN32)
+	add_file_folder("Sound"
+		${file_root_sound}
+		sound/speech_win.cpp
+	)
+endif()
 
 if (APPLE)
 	add_file_folder("Sound"
