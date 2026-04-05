@@ -66,12 +66,12 @@
 #include <cwchar>
 #include <cstdio>
 #pragma warning(pop)
-
 #include "globalincs/pstypes.h"
 #include "utils/unicode.h"
 #include "speech.h"
 
-
+static SCP_vector<SCP_string> cached_voices;
+static bool voices_cached = false;
 bool Speech_init = false;
 
 bool speech_init()
@@ -303,6 +303,9 @@ bool speech_is_speaking()
 
 SCP_vector<SCP_string> speech_enumerate_voices()
 {
+	if (voices_cached) {
+		return cached_voices;
+	}
 #ifdef _WIN32
 	HRESULT hr = CoCreateInstance(
 		CLSID_SpVoice,
@@ -368,9 +371,11 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 	}
 
 	comTokenCategory->Release();
-
-	Voice_device->Release();
-
+	//only release the voice_device when getting flags
+	if (!Speech_init)
+		Voice_device->Release();
+	voices_cached = true;
+	cached_voices = voices;
 	return voices;
 #else
 	STUB_FUNCTION;

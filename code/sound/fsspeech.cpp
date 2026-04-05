@@ -10,6 +10,7 @@
 #include "osapi/osregistry.h"
 #include "sound/fsspeech.h"
 #include "sound/speech.h"
+#include "options/Option.h"
 
 
 extern int Cmdline_freespace_no_sound;
@@ -30,6 +31,141 @@ const char *FSSpeech_play_id[FSSPEECH_FROM_MAX] =
 char Speech_buffer[MAX_SPEECH_BUFFER_LEN] = "";
 size_t  Speech_buffer_len;
 
+static bool ttsingame_change(bool new_val, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+	FSSpeech_play_from[FSSPEECH_FROM_INGAME] = new_val;
+	return true;
+}
+
+static bool ttsmulti_change(bool new_val, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+	FSSpeech_play_from[FSSPEECH_FROM_MULTI] = new_val;
+	return true;
+}
+
+static bool ttsbriefing_change(bool new_val, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+	FSSpeech_play_from[FSSPEECH_FROM_BRIEFING] = new_val;
+	return true;
+}
+
+static bool ttstechroom_change(bool new_val, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+	FSSpeech_play_from[FSSPEECH_FROM_TECHROOM] = new_val;
+	return true;
+}
+
+static bool ttsvolume_change(float new_val, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+	speech_set_volume((unsigned short) new_val);
+	return true;
+}
+
+static SCP_vector<int> ttsvoice_enumerator()
+{
+	SCP_vector<int> vals;
+	auto voices = speech_enumerate_voices();
+	for (int i = 0; i < voices.size(); ++i) {
+		vals.push_back(i);
+	}
+	return vals;
+}
+
+static SCP_string ttsvoice_display(int id)
+{
+	SCP_string out;
+	auto voices = speech_enumerate_voices();
+	sprintf(out, "(%d) %s", id + 1, voices[id].c_str());
+	return out;
+}
+
+static bool ttsvoice_change(int id, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+	speech_set_voice(id);
+	return true;
+}
+
+static auto SpeechVoiceOption = options::OptionBuilder<int>("Speech.Voice",
+	std::pair<const char*, int>{"TTS Voice", -1},
+	std::pair<const char*, int>{"The voice used to read text", -1})
+	.category(std::make_pair("Audio", 1826))
+	.level(options::ExpertLevel::Beginner)
+	.enumerator(ttsvoice_enumerator)
+	.display(ttsvoice_display)
+	.flags({ options::OptionFlags::ForceMultiValueSelection })
+	.default_val(0)
+	.change_listener(ttsvoice_change)
+	.importance(2)
+	.finish();
+
+static auto SpeechVolumeOption = options::OptionBuilder<float>("Speech.Volume",
+	std::pair<const char*, int>{"TTS Volume", -1},
+	std::pair<const char*, int>{"Volume used for playing TTS speech", -1})
+	.category(std::make_pair("Audio", 1826))
+	.range(0.0f, 100.0f)
+	.default_val(100.0f)
+	.change_listener(ttsvolume_change)
+	.importance(1)
+	.finish();
+
+static auto SpeechBriefingOption = options::OptionBuilder<bool>("Speech.Briefing",
+	std::pair<const char*, int>{"TTS in briefings", -1},
+	std::pair<const char*, int>{"Enable or disable TTS in briefings", -1})
+	.category(std::make_pair("Audio", 1826))
+	.level(options::ExpertLevel::Beginner)
+	.change_listener(ttsbriefing_change)
+	.default_val(true)
+	.importance(0)
+	.finish();
+
+static auto SpeechTechroomOption = options::OptionBuilder<bool>("Speech.Techroom",
+	std::pair<const char*, int>{"TTS in techroom", -1},
+	std::pair<const char*, int>{"Enable or disable TTS in techroom", -1})
+	.category(std::make_pair("Audio", 1826))
+	.level(options::ExpertLevel::Beginner)
+	.change_listener(ttstechroom_change)
+	.default_val(true)
+	.importance(0)
+	.finish();
+
+static auto SpeechIngameOption = options::OptionBuilder<bool>("Speech.Ingame",
+	std::pair<const char*, int>{"TTS in-game", -1},
+	std::pair<const char*, int>{"Enable or disable TTS in-game", -1})
+	.category(std::make_pair("Audio", 1826))
+	.level(options::ExpertLevel::Beginner)
+	.change_listener(ttsingame_change)
+	.default_val(true)
+	.importance(0)
+	.finish();
+
+static auto SpeechMultiOption = options::OptionBuilder<bool>("Speech.Multi",
+	std::pair<const char*, int>{"TTS in multiplayer", -1},
+	std::pair<const char*, int>{"Enable or disable TTS in multiplayer", -1})
+	.category(std::make_pair("Audio", 1826))
+	.level(options::ExpertLevel::Beginner)
+	.change_listener(ttsmulti_change)
+	.default_val(true)
+	.importance(0)
+	.finish();
+
 bool fsspeech_init()
 {
 	if (speech_inited) {
@@ -45,18 +181,32 @@ bool fsspeech_init()
 		return false;
 	}
 
-	// Get the settings from the registry
-	for(int i = 0; i < FSSPEECH_FROM_MAX; i++) {
-		FSSpeech_play_from[i] =
-			os_config_read_uint(NULL, FSSpeech_play_id[i], 0) ? true : false;
-		nprintf(("Speech", "Play %s: %s\n", FSSpeech_play_id[i], FSSpeech_play_from[i] ? "true" : "false"));
+	if (Using_in_game_options) 
+	{
+		FSSpeech_play_from[FSSPEECH_FROM_TECHROOM] = SpeechTechroomOption->getValue();
+		FSSpeech_play_from[FSSPEECH_FROM_BRIEFING] = SpeechBriefingOption->getValue();
+		FSSpeech_play_from[FSSPEECH_FROM_INGAME] = SpeechIngameOption->getValue();
+		FSSpeech_play_from[FSSPEECH_FROM_MULTI] = SpeechMultiOption->getValue();
+		// Early caching of voices names, needed for sapi not to override initial voice selection
+		speech_enumerate_voices();
+		speech_set_volume((unsigned short)SpeechVolumeOption->getValue());
+		speech_set_voice(SpeechVoiceOption->getValue());
 	}
+	else 
+	{
+		// Get the settings from the registry
+		for (int i = 0; i < FSSPEECH_FROM_MAX; i++) {
+			FSSpeech_play_from[i] =
+				os_config_read_uint(NULL, FSSpeech_play_id[i], 0) ? true : false;
+			nprintf(("Speech", "Play %s: %s\n", FSSpeech_play_id[i], FSSpeech_play_from[i] ? "true" : "false"));
+		}
 
-	int volume = os_config_read_uint(NULL, "SpeechVolume", 100);
-	speech_set_volume((unsigned short) volume);
+		int volume = os_config_read_uint(NULL, "SpeechVolume", 100);
+		speech_set_volume((unsigned short)volume);
 
-	int voice = os_config_read_uint(NULL, "SpeechVoice", 0);
-	speech_set_voice(voice);
+		int voice = os_config_read_uint(NULL, "SpeechVoice", 0);
+		speech_set_voice(voice);
+	}
 
 	speech_inited = 1;
 
