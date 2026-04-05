@@ -1634,7 +1634,7 @@ endif()
 if (APPLE)
 	add_file_folder("Sound"
 		${file_root_sound}
-		sound/speech.mm
+		sound/speech_mac.cpp
 	)
 endif()
 

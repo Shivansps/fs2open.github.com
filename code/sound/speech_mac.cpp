@@ -6,7 +6,8 @@
 #include "globalincs/pstypes.h"
 #include "utils/unicode.h"
 
-
+static SCP_vector<SCP_string> cached_voices;
+static bool voices_cached = false;
 static NSSpeechSynthesizer *synth = nil;
 static bool Speech_init = false;
 
@@ -36,40 +37,20 @@ void speech_deinit()
 	Speech_init = false;
 }
 
-bool speech_play(const char *text)
+bool speech_play(const SCP_string& text)
 {
 	if ( !Speech_init ) {
 		return false;
 	}
 
-	if ( !text || !strlen(text) ) {
-		nprintf(("Speech", "Not playing speech because passed text is null.\n"));
-		return false;
-	}
-
-	SCP_string work_buffer;
-
-	bool saw_dollar = false;
-	for (auto ch : unicode::codepoint_range(text)) {
-		if (ch == UNICODE_CHAR('$')) {
-			// Skip $ escape sequences which appear in briefing text
-			saw_dollar = true;
-			continue;
-		} else if (saw_dollar) {
-			saw_dollar = false;
-			continue;
-		}
-
-		unicode::encode(ch, std::back_inserter(work_buffer));
-	}
-
-	if (work_buffer.empty()) {
+	if (text.empty()) {
+		nprintf(("Speech", "Not playing speech because passed text is empty.\n"));
 		return false;
 	}
 
 	[synth startSpeakingString:
 		[NSString stringWithUTF8String:
-			work_buffer.c_str()
+			text.c_str()
 		]
 	];
 
@@ -154,6 +135,10 @@ bool speech_is_speaking()
 
 SCP_vector<SCP_string> speech_enumerate_voices()
 {
+	if (voices_cached) {
+		return cached_voices;
+	}
+
 	NSArray *voices = [NSSpeechSynthesizer availableVoices];
 
 	SCP_vector<SCP_string> fsoVoices;
@@ -165,6 +150,8 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 		fsoVoices.push_back([name UTF8String]);
 	}
 
+	voices_cached = true;
+	cached_voices = fsoVoices;
 	return fsoVoices;
 }
 
