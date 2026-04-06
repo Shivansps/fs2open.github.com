@@ -12,11 +12,7 @@ if (WIN32)
 elseif(APPLE)
 	# it should just work
 elseif(UNIX)
-	# speech-dispatcher-> libspeechd-dev
-	find_package(PkgConfig REQUIRED)
-	pkg_check_modules(SPEECHD REQUIRED speech-dispatcher)
-	target_include_directories(speech INTERFACE ${SPEECHD_INCLUDE_DIRS})
-	target_link_libraries(speech INTERFACE ${SPEECHD_LIBRARIES})
+	# uses speech-dispatcher with dlopen
 else()
 	message(SEND_ERROR "Text to Speech is not supported on this platform!")
 endif()

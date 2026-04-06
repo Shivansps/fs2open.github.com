@@ -1,7 +1,96 @@
 #ifdef FS2_SPEECH
-#include <libspeechd.h>
+#include <dlfcn.h> 
 #include "globalincs/pstypes.h"
 #include "utils/unicode.h"
+#include "external_dll/externalcode.h"
+
+// Adapted from libspeechd.h / speechd_types.h
+// https://github.com/brailcom/speechd/tree/master/src/api/c
+
+typedef struct SPDConnection SPDConnection;
+
+typedef struct {
+    char *name;
+    char *language;
+    char *variant;
+} SPDVoice;
+
+typedef enum {
+    SPD_MODE_SINGLE = 0,
+    SPD_MODE_THREADED = 1
+} SPDConnectionMode;
+
+typedef enum {
+    SPD_IMPORTANT   = 1,
+    SPD_MESSAGE     = 2,
+    SPD_TEXT        = 3,
+    SPD_NOTIFICATION = 4,
+    SPD_PROGRESS    = 5
+} SPDPriority;
+
+static void* lib_handle = nullptr;
+
+typedef SPDConnection* (*pfn_spd_open)(const char*, const char*, const char*, SPDConnectionMode);
+typedef void (*pfn_spd_close)(SPDConnection*);
+typedef int (*pfn_spd_say)(SPDConnection*, SPDPriority, const char*);
+typedef int (*pfn_spd_pause)(SPDConnection*);
+typedef int (*pfn_spd_resume)(SPDConnection*);
+typedef int (*pfn_spd_stop)(SPDConnection*);
+typedef int (*pfn_spd_set_volume)(SPDConnection*, signed int);
+typedef int (*pfn_spd_set_synthesis_voice)(SPDConnection*, const char*);
+typedef SPDVoice** (*pfn_spd_list_synthesis_voices)(SPDConnection*);
+typedef void (*pfn_free_spd_voices)(SPDVoice**);
+
+static pfn_spd_open                		p_spd_open = nullptr;
+static pfn_spd_close                	p_spd_close = nullptr;
+static pfn_spd_say                  	p_spd_say = nullptr;
+static pfn_spd_pause                	p_spd_pause = nullptr;
+static pfn_spd_resume               	p_spd_resume = nullptr;
+static pfn_spd_stop                 	p_spd_stop = nullptr;
+static pfn_spd_set_volume           	p_spd_set_volume = nullptr;
+static pfn_spd_set_synthesis_voice  	p_spd_set_synthesis_voice = nullptr;
+static pfn_spd_list_synthesis_voices	p_spd_list_synthesis_voices = nullptr;
+static pfn_free_spd_voices 				p_free_spd_voices = nullptr;
+
+// Load speech-dispatcher with dlopen and load symbols
+static bool ensure_speechd_lib()
+{
+    if (lib_handle) return true;
+    lib_handle = dlopen("libspeechd.so.3", RTLD_LAZY | RTLD_LOCAL);
+    if (!lib_handle) {
+		lib_handle = dlopen("libspeechd.so", RTLD_LAZY | RTLD_LOCAL);
+    }
+
+    if (!lib_handle) {
+        mprintf(("Speech: Unable to load libspeechd.so: %s\n", dlerror()));
+        return false;
+    }
+    
+    // used symbols
+    p_spd_open                	= (pfn_spd_open)               		dlsym(lib_handle, "spd_open");
+    p_spd_close              	= (pfn_spd_close)              		dlsym(lib_handle, "spd_close");
+    p_spd_say                 	= (pfn_spd_say)                		dlsym(lib_handle, "spd_say");
+    p_spd_pause               	= (pfn_spd_pause)              		dlsym(lib_handle, "spd_pause");
+    p_spd_resume              	= (pfn_spd_resume)             		dlsym(lib_handle, "spd_resume");
+    p_spd_stop                	= (pfn_spd_stop)               		dlsym(lib_handle, "spd_stop");
+    p_spd_set_volume          	= (pfn_spd_set_volume)         		dlsym(lib_handle, "spd_set_volume");
+    p_spd_set_synthesis_voice 	= (pfn_spd_set_synthesis_voice)		dlsym(lib_handle, "spd_set_synthesis_voice");
+    p_spd_list_synthesis_voices = (pfn_spd_list_synthesis_voices)	dlsym(lib_handle, "spd_list_synthesis_voices");
+    p_free_spd_voices 			= (pfn_free_spd_voices)				dlsym(lib_handle, "free_spd_voices");
+
+    if (!p_spd_open || !p_spd_close || !p_spd_say || !p_spd_pause ||
+        !p_spd_resume || !p_spd_stop || !p_spd_set_volume ||
+        !p_spd_set_synthesis_voice || !p_spd_list_synthesis_voices || !p_free_spd_voices) {
+        mprintf(("Speech: Unable to load one or more symbols from libspeechd.so: %s\n", dlerror()));
+        dlclose(lib_handle);
+        lib_handle = nullptr;
+        return false;
+    }
+
+    return true;
+}
+
+// Speech handling starts here
 
 static SCP_vector<SCP_string> cached_voices;
 static bool voices_cached = false;
@@ -13,8 +102,12 @@ bool speech_init()
 	if (Speech_init) {
 		return true;
 	}
-	
-    spd = spd_open("freespace_open", "main", nullptr, SPD_MODE_SINGLE);
+	    
+	if (!ensure_speechd_lib()) {
+        return false;
+    }
+    
+    spd = p_spd_open("freespace_open", "main", nullptr, SPD_MODE_SINGLE);
     if (!spd) {
         mprintf(("Speech: Unable to connect to speech-dispatcher\n"));
         return false;
@@ -29,8 +122,13 @@ void speech_deinit()
 	if ( !Speech_init ) {
 		return;
 	}
-	spd_close(spd);
+	p_spd_close(spd);
 	Speech_init = false;
+	spd = nullptr;
+    if (lib_handle) { 
+		dlclose(lib_handle); 
+		lib_handle = nullptr; 
+	}
 }
 
 bool speech_play(const SCP_string& text)
@@ -44,7 +142,7 @@ bool speech_play(const SCP_string& text)
 		return false;
 	}
 
-	return (spd_say(spd, SPD_TEXT, text.c_str()) >= 0);
+	return (p_spd_say(spd, SPD_TEXT, text.c_str()) >= 0);
 }
 
 bool speech_pause()
@@ -53,7 +151,7 @@ bool speech_pause()
 		return false;
 	}
 
-	spd_pause(spd);
+	p_spd_pause(spd);
 	
 	return true;
 }
@@ -64,7 +162,7 @@ bool speech_resume()
 		return false;
 	}
 
-	spd_resume(spd);
+	p_spd_resume(spd);
 	
 	return true;
 }
@@ -75,7 +173,7 @@ bool speech_stop()
 		return false;
 	}
 
-	spd_stop(spd);
+	p_spd_stop(spd);
 	
 	return true;
 }
@@ -86,7 +184,7 @@ bool speech_set_volume(unsigned short volume)
 		return false;
 	}
 
-	spd_set_volume(spd, volume); 
+	p_spd_set_volume(spd, volume); 
 	
 	return true;
 }
@@ -100,8 +198,8 @@ bool speech_set_voice(int voice)
 	if (voice < 0 || static_cast<size_t>(voice) >= cached_voices.size()) {
         return false;
     }
-	
-	spd_set_synthesis_voice(spd, cached_voices[voice].c_str());
+    
+	p_spd_set_synthesis_voice(spd, cached_voices[voice].c_str());
 	
 	return true;
 }
@@ -122,10 +220,16 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 	}
 
 	SCP_vector<SCP_string> fsoVoices;
+	
+	if (!ensure_speechd_lib()) {
+        voices_cached = true;
+        cached_voices = fsoVoices;
+        return fsoVoices;
+    }
 
     SPDConnection* connection = spd;
     if ( !Speech_init ) {
-    	connection = spd_open("fso_voice_list", "client", NULL, SPD_MODE_SINGLE);
+    	connection = p_spd_open("fso_voice_list", "client", NULL, SPD_MODE_SINGLE);
     	if (!connection) {
         	mprintf(("Speech: Unable to connect to speech-dispatcher\n"));
         	voices_cached = true;
@@ -134,7 +238,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
     	}
 	}
 
-    SPDVoice** voices = spd_list_synthesis_voices(connection);
+    SPDVoice** voices = p_spd_list_synthesis_voices(connection);
     
     for (int i = 0; voices[i] != NULL; i++) {
     	SCP_string lang = voices[i]->language;
@@ -147,9 +251,9 @@ SCP_vector<SCP_string> speech_enumerate_voices()
         }
     }
 
-    //spd_free_voices(voices);
+    p_free_spd_voices(voices);
     if ( !Speech_init ) {
-    	spd_close(connection);
+    	p_spd_close(connection);
 	}
 	voices_cached = true;
 	cached_voices = fsoVoices;
