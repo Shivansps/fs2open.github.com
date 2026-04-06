@@ -97,6 +97,10 @@ bool speech_set_voice(int voice)
 		return false;
 	}
 	
+	if (voice < 0 || static_cast<size_t>(voice) >= cached_voices.size()) {
+        return false;
+    }
+	
 	spd_set_synthesis_voice(spd, cached_voices[voice].c_str());
 	
 	return true;

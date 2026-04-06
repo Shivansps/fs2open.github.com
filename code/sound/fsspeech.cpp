@@ -88,8 +88,11 @@ static SCP_vector<int> ttsvoice_enumerator()
 
 static SCP_string ttsvoice_display(int id)
 {
-	SCP_string out;
 	auto voices = speech_enumerate_voices();
+	if (voices.empty() || id < 0 || static_cast<size_t>(id) >= voices.size()) {
+        return "No voices loaded";
+    }
+    SCP_string out;
 	sprintf(out, "(%d) %s", id + 1, voices[id].c_str());
 	return out;
 }
@@ -99,6 +102,10 @@ static bool ttsvoice_change(int id, bool initial)
 	if (initial) {
 		return false;
 	}
+	auto voices = speech_enumerate_voices();
+	if (voices.empty() || id < 0 || static_cast<size_t>(id) >= voices.size()) {
+        return false;
+    }
 	speech_set_voice(id);
 	return true;
 }

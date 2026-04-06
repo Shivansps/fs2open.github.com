@@ -134,6 +134,10 @@ bool speech_set_volume(unsigned short volume)
 
 bool speech_set_voice(int voice)
 {
+	if (voice < 0 || static_cast<size_t>(voice) >= cached_voices.size()) {
+        return false;
+    }
+	
 	HRESULT                             hr;
 	CComPtr<ISpObjectToken>             cpVoiceToken;
 	CComPtr<IEnumSpObjectTokens>        cpEnum;
