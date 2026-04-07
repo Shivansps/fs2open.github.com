@@ -229,7 +229,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 
     SPDConnection* connection = spd;
     if ( !Speech_init ) {
-    	connection = p_spd_open("fso_voice_list", "client", NULL, SPD_MODE_SINGLE);
+    	connection = p_spd_open("fso_voice_list", "client", nullptr, SPD_MODE_SINGLE);
     	if (!connection) {
         	mprintf(("Speech: Unable to connect to speech-dispatcher\n"));
         	voices_cached = true;
@@ -240,7 +240,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 
     SPDVoice** voices = p_spd_list_synthesis_voices(connection);
     
-    for (int i = 0; voices[i] != NULL; i++) {
+    for (int i = 0; voices[i] != nullptr; i++) {
     	SCP_string lang = voices[i]->language;
     	// There are too many we cant add them all
     	// Only add English voices

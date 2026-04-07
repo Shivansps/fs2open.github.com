@@ -11,7 +11,7 @@
 	#pragma message( "WARNING: You have not compiled speech into this build (use FS2_SPEECH)" )
 #endif // NDEBUG
 #endif // _WIN32
-#else // FS2_SPEECH
+#elif defined(_WIN32) // FS2_SPEECH
 
 #ifdef LAUNCHER
 #include "stdafx.h"
@@ -60,7 +60,7 @@ bool speech_init()
 {
     HRESULT hr = CoCreateInstance(
 		CLSID_SpVoice, 
-		NULL, 
+		nullptr, 
 		CLSCTX_ALL, 
 		IID_ISpVoice, 
 		(void **)&Voice_device);
@@ -106,7 +106,7 @@ bool speech_play(const SCP_string& text)
 	}
 
 	speech_stop();
-	return SUCCEEDED(Voice_device->Speak(wide_string.c_str(), SPF_ASYNC, NULL));
+	return SUCCEEDED(Voice_device->Speak(wide_string.c_str(), SPF_ASYNC, nullptr));
 }
 
 bool speech_pause()
@@ -124,7 +124,7 @@ bool speech_resume()
 bool speech_stop()
 {
 	if(Speech_init == false) return true;
-    return SUCCEEDED(Voice_device->Speak( NULL, SPF_PURGEBEFORESPEAK, NULL ));
+    return SUCCEEDED(Voice_device->Speak(nullptr, SPF_PURGEBEFORESPEAK, nullptr));
 }
 
 bool speech_set_volume(unsigned short volume)
@@ -144,7 +144,7 @@ bool speech_set_voice(int voice)
 	ULONG                               num_voices = 0;
 
 	//Enumerate the available voices 
-	hr = SpEnumTokens(SPCAT_VOICES, NULL, NULL, &cpEnum);
+	hr = SpEnumTokens(SPCAT_VOICES, nullptr, nullptr, &cpEnum);
 
 	if(FAILED(hr)) return false;
 
@@ -158,7 +158,7 @@ bool speech_set_voice(int voice)
 	{
 		cpVoiceToken.Release();
 		
-		hr = cpEnum->Next( 1, &cpVoiceToken, NULL );
+		hr = cpEnum->Next( 1, &cpVoiceToken, nullptr);
 
 		if(FAILED(hr)) {
 			return false;
@@ -179,7 +179,7 @@ bool speech_is_speaking()
 	HRESULT			hr;
 	SPVOICESTATUS	pStatus;
 
-	hr = Voice_device->GetStatus(&pStatus, NULL);
+	hr = Voice_device->GetStatus(&pStatus, nullptr);
 	if (FAILED(hr)) return false;
 
 	return (pStatus.dwRunningState != SPRS_DONE);
@@ -193,7 +193,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 
 	HRESULT hr = CoCreateInstance(
 		CLSID_SpVoice,
-		NULL,
+		nullptr,
 		CLSCTX_ALL,
 		IID_ISpVoice,
 		(void **)&Voice_device);
@@ -203,12 +203,12 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 	}
 
 	// This code is mostly copied from wxLauncher
-	ISpObjectTokenCategory * comTokenCategory = NULL;
-	IEnumSpObjectTokens * comVoices = NULL;
+	ISpObjectTokenCategory * comTokenCategory = nullptr;
+	IEnumSpObjectTokens * comVoices = nullptr;
 	ULONG comVoicesCount = 0;
 
 	// Generate enumeration of voices
-	hr = ::CoCreateInstance(CLSID_SpObjectTokenCategory, NULL,
+	hr = ::CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr,
 		CLSCTX_INPROC_SERVER, IID_ISpObjectTokenCategory, (LPVOID*)&comTokenCategory);
 	if (FAILED(hr)) {
 		return SCP_vector<SCP_string>();
@@ -219,7 +219,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 		return SCP_vector<SCP_string>();
 	}
 
-	hr = comTokenCategory->EnumTokens(NULL, NULL, &comVoices);
+	hr = comTokenCategory->EnumTokens(nullptr, nullptr, &comVoices);
 	if (FAILED(hr)) {
 		return SCP_vector<SCP_string>();
 	}
@@ -231,12 +231,12 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 
 	SCP_vector<SCP_string> voices;
 	while (comVoicesCount > 0) {
-		ISpObjectToken * comAVoice = NULL;
+		ISpObjectToken * comAVoice = nullptr;
 
-		comVoices->Next(1, &comAVoice, NULL); // retrieve just one
+		comVoices->Next(1, &comAVoice, nullptr); // retrieve just one
 
-		LPWSTR id = NULL;
-		comAVoice->GetStringValue(NULL, &id);
+		LPWSTR id = nullptr;
+		comAVoice->GetStringValue(nullptr, &id);
 
 		auto idlength = wcslen(id);
 		auto buffer_size = WideCharToMultiByte(CP_UTF8, 0, id, (int)idlength, nullptr, 0, nullptr, nullptr);

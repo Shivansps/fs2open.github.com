@@ -219,15 +219,14 @@ bool fsspeech_init()
 	{
 		// Get the settings from the registry
 		for (int i = 0; i < FSSPEECH_FROM_MAX; i++) {
-			FSSpeech_play_from[i] =
-				os_config_read_uint(NULL, FSSpeech_play_id[i], 0) ? true : false;
+			FSSpeech_play_from[i] = static_cast<bool>(os_config_read_uint(nullptr, FSSpeech_play_id[i], 0));
 			nprintf(("Speech", "Play %s: %s\n", FSSpeech_play_id[i], FSSpeech_play_from[i] ? "true" : "false"));
 		}
 
-		int volume = os_config_read_uint(NULL, "SpeechVolume", 100);
+		int volume = os_config_read_uint(nullptr, "SpeechVolume", 100);
 		speech_set_volume((unsigned short)volume);
 
-		int voice = os_config_read_uint(NULL, "SpeechVoice", 0);
+		int voice = os_config_read_uint(nullptr, "SpeechVoice", 0);
 		speech_set_voice(voice);
 	}
 
