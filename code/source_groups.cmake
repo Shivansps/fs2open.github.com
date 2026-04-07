@@ -1632,7 +1632,7 @@ if (WIN32)
 elseif (APPLE)
 	add_file_folder("Sound"
 		${file_root_sound}
-		sound/speech_mac.cpp
+		sound/speech_mac.mm
 	)
 elseif (UNIX)
 	add_file_folder("Sound"
