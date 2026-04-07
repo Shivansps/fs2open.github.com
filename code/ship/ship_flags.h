@@ -136,7 +136,8 @@ namespace Ship {
 		Fail_sound_locked_secondary,		// Kiloku -- Play the firing fail sound when the weapon is locked.
 		Subsystem_cache_valid,		// Goober5000 - whether the subsystem list index caches can be used
 		Aspect_immune,						// Kiloku -- Ship cannot be targeted by Aspect Seekers.
-		Cannot_perform_scan,		// Goober5000 - ship cannot scan other ships
+		Cannot_perform_scan_hide_cargo,		// Goober5000 - ship cannot scan other ships, and cargo will not be shown on the HUD
+		Cannot_perform_scan_show_cargo,		// Goober5000 - ship cannot scan other ships, but cargo will be shown on the HUD
 		No_targeting_limits,				//MjnMixael -- Ship is always targetable regardless of AWACS or targeting range limits
 		Maneuver_despite_engines,	// Goober5000 - ship can move even when engines are disabled or disrupted
 		Force_primary_unlinking,	// plieblang - turned on when the ship is under good-primary-time
@@ -217,7 +218,8 @@ namespace Ship {
 		Instantaneous_acceleration,		// Goober5000
 		Has_display_name,				// Goober5000
 		Large_ship_deathroll,			// Asteroth - big ships dont normally deathroll, this makes them do it!
-		No_impact_debris,				// wookieejedi - Don't spawn the small debris on impact
+		Disable_all_generic_impact_debris,    // wookieejedi - Don't spawn debris on impact
+		Disable_all_generic_explosion_debris, // wookieejedi - Don't spawn debris on explosion
 
 		NUM_VALUES
 	};
@@ -229,7 +231,8 @@ namespace Ship {
         Target_as_threat,
         Show_attack_direction,
         No_class_display,
-        Scannable,
+        Targetable_as_unscanned,
+        Scannable_by_default,
         Warp_pushes,
         Warp_pushable,
         Turret_tgt_ship_tgt,

@@ -162,6 +162,7 @@ bool Disabled_or_disrupted_engines_silent;
 std::array<std::tuple<float, float>, 6> Fred_spacemouse_nonlinearity;
 bool Randomize_particle_rotation;
 bool Disable_shield_effects;
+bool Disable_all_noncustom_generic_debris;
 bool Calculate_subsystem_hitpoints_after_parsing;
 bool Disable_internal_loadout_restoration_system;
 bool Contrails_use_absolute_speed;
@@ -172,16 +173,20 @@ bool Hide_main_rearm_items_in_comms_gauge;
 bool Fix_scripted_velocity;
 color Overhead_line_colors[MAX_SHIP_SECONDARY_BANKS];
 bool Preload_briefing_icon_models;
-EscapeKeyBehaviorInOptions escape_key_behavior_in_options;
+EscapeKeyBehaviorInOptions Escape_key_behavior_in_options;
+bool Target_bomb_or_bomber_use_distance;
+TargetBomborBomberBehaviorOptions Target_bomb_or_bomber_behavior;
 bool Fix_asteroid_bounding_box_check;
 bool Disable_intro_movie;
 bool Show_locked_status_scramble_missions;
 bool Disable_expensive_turret_target_check;
 float Shield_percent_skips_damage;
 float Min_radius_for_persistent_debris;
+bool Zero_radius_explosions_skip_fireballs;
 
 
 #ifdef WITH_DISCORD
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto DiscordOption __UNUSED = options::OptionBuilder<bool>("Game.Discord",
                      std::pair<const char*, int>{"Discord Presence", 1754},
                      std::pair<const char*, int>{"Toggle Discord Rich Presence", 1755})
@@ -995,6 +1000,10 @@ void parse_mod_table(const char *filename)
 				stuff_boolean(&Disable_shield_effects);
 			}
 
+			if (optional_string("$Disable all non-custom generic debris:")) {
+				stuff_boolean(&Disable_all_noncustom_generic_debris);
+			}
+
 			optional_string("#NETWORK SETTINGS");
 
 			if (optional_string("$FS2NetD port:")) {
@@ -1221,7 +1230,7 @@ void parse_mod_table(const char *filename)
 					mprintf(("Game Settings Table: Using 3D weapon icons\n"));
 			}
 
-			if (optional_string("$FS2 effect grid color:")) {
+			if (optional_string_either("$FS2 effect grid color:", "$FS2 effect grid colour:") >= 0) {
 				int rgb[3];
 				stuff_int_list(rgb, 3);
 				CLAMP(rgb[0], 0, 255);
@@ -1230,7 +1239,7 @@ void parse_mod_table(const char *filename)
 				gr_init_color(&Default_fs2_effect_grid_color, rgb[0], rgb[1], rgb[2]);
 			}
 
-			if (optional_string("$FS2 effect scanline color:")) {
+			if (optional_string_either("$FS2 effect scanline color:", "$FS2 effect scanline colour:") >= 0) {
 				int rgb[3];
 				stuff_int_list(rgb, 3);
 				CLAMP(rgb[0], 0, 255);
@@ -1250,7 +1259,7 @@ void parse_mod_table(const char *filename)
 				}
 			}
 
-			if (optional_string("$FS2 effect wireframe color:")) {
+			if (optional_string_either("$FS2 effect wireframe color:", "$FS2 effect wireframe colour:") >= 0) {
 				int rgb[3];
 				stuff_int_list(rgb, 3);
 				CLAMP(rgb[0], 0, 255);
@@ -1277,27 +1286,27 @@ void parse_mod_table(const char *filename)
 				}
 			}
 
-			if (optional_string("+Overhead Line Color 1:")) {
+			if (optional_string_either("+Overhead Line Color 1:", "+Overhead Line Colour 1:") >= 0) {
 				int rgba[4] = {0, 0, 0, 0};
-				stuff_int_list(rgba, 4, RAW_INTEGER_TYPE);
+				stuff_int_list(rgba, 4, ParseLookupType::RAW_INTEGER_TYPE);
 				gr_init_alphacolor(&Overhead_line_colors[0], rgba[0], rgba[1], rgba[2], rgba[3]);
 			}
 
-			if (optional_string("+Overhead Line Color 2:")) {
+			if (optional_string_either("+Overhead Line Color 2:", "+Overhead Line Colour 2:") >= 0) {
 				int rgba[4] = {0, 0, 0, 0};
-				stuff_int_list(rgba, 4, RAW_INTEGER_TYPE);
+				stuff_int_list(rgba, 4, ParseLookupType::RAW_INTEGER_TYPE);
 				gr_init_alphacolor(&Overhead_line_colors[1], rgba[0], rgba[1], rgba[2], rgba[3]);
 			}
 
-			if (optional_string("+Overhead Line Color 3:")) {
+			if (optional_string_either("+Overhead Line Color 3:", "+Overhead Line Colour 3:") >= 0) {
 				int rgba[4] = {0, 0, 0, 0};
-				stuff_int_list(rgba, 4, RAW_INTEGER_TYPE);
+				stuff_int_list(rgba, 4, ParseLookupType::RAW_INTEGER_TYPE);
 				gr_init_alphacolor(&Overhead_line_colors[2], rgba[0], rgba[1], rgba[2], rgba[3]);
 			}
 
-			if (optional_string("+Overhead Line Color 4:")) {
+			if (optional_string_either("+Overhead Line Color 4:", "+Overhead Line Colour 4:") >= 0) {
 				int rgba[4] = {0, 0, 0, 0};
-				stuff_int_list(rgba, 4, RAW_INTEGER_TYPE);
+				stuff_int_list(rgba, 4, ParseLookupType::RAW_INTEGER_TYPE);
 				gr_init_alphacolor(&Overhead_line_colors[3], rgba[0], rgba[1], rgba[2], rgba[3]);
 			}
 
@@ -1559,16 +1568,44 @@ void parse_mod_table(const char *filename)
 
 				if (temp == "default")
 				{
-					escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::DEFAULT;
+					Escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::DEFAULT;
 				}
 				else if (temp == "save")
 				{
-					escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::SAVE;
+					Escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::SAVE;
 				}
 				else
 				{
 					Warning(LOCATION, "$Behavior for pressing Escape key in options menu: Invalid selection. Must be value of 'default' or 'save'. Reverting to 'default' value.");
-					escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::DEFAULT;
+					Escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::DEFAULT;
+				}
+			}
+
+			if (optional_string("$Use closest distance method for 'Target Hostile Bomb or Bomber' control:")) {
+				stuff_boolean(&Target_bomb_or_bomber_use_distance);
+			}
+
+			if (optional_string("$Objects targeted with 'Target Hostile Bomb or Bomber' control:")) {
+				SCP_string temp;
+				stuff_string(temp, F_RAW);
+				SCP_tolower(temp);
+
+				if (temp == "default" || temp == "bombs and bombers")
+				{
+					Target_bomb_or_bomber_behavior = TargetBomborBomberBehaviorOptions::BOMBS_AND_BOMBERS;
+				}
+				else if (temp == "only bombs")
+				{
+					Target_bomb_or_bomber_behavior = TargetBomborBomberBehaviorOptions::ONLY_BOMBS;
+				}
+				else if (temp == "only bombers")
+				{
+					Target_bomb_or_bomber_behavior = TargetBomborBomberBehaviorOptions::ONLY_BOMBERS;
+				}
+				else
+				{
+					Warning(LOCATION, "$Objects targeted with 'Target Hostile Bomb or Bomber' control: Invalid selection. Must be value of 'default' or 'bombs and bombers' or 'only bombs' or 'only bombers'. Reverting to 'bombs and bombers' value.");
+					Target_bomb_or_bomber_behavior = TargetBomborBomberBehaviorOptions::BOMBS_AND_BOMBERS;
 				}
 			}
 
@@ -1601,6 +1638,10 @@ void parse_mod_table(const char *filename)
 
 			if (optional_string("$Minimum ship radius for persistent debris:")) {
 				stuff_float(&Min_radius_for_persistent_debris);
+			}
+
+			if (optional_string("$Zero-radius explosions skip fireballs:")) {
+				stuff_boolean(&Zero_radius_explosions_skip_fireballs);
 			}
 
 			// end of options ----------------------------------------
@@ -1823,6 +1864,7 @@ void mod_table_reset()
 			std::tuple<float, float>{ 1.0f, 1.0f }
 		}};
 	Randomize_particle_rotation = false;
+	Disable_all_noncustom_generic_debris = false;
 	Disable_shield_effects = false;
 	Calculate_subsystem_hitpoints_after_parsing = false;
 	Disable_internal_loadout_restoration_system = false;
@@ -1839,13 +1881,16 @@ void mod_table_reset()
 	gr_init_alphacolor(&Overhead_line_colors[2], 175, 175, 175, 255);
 	gr_init_alphacolor(&Overhead_line_colors[3], 100, 100, 100, 255);
 	Preload_briefing_icon_models = false;
-	escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::DEFAULT;
+	Escape_key_behavior_in_options = EscapeKeyBehaviorInOptions::DEFAULT;
+	Target_bomb_or_bomber_use_distance = false;
+	Target_bomb_or_bomber_behavior = TargetBomborBomberBehaviorOptions::BOMBS_AND_BOMBERS;
 	Fix_asteroid_bounding_box_check = false;
 	Disable_intro_movie = false;
 	Show_locked_status_scramble_missions = false;
 	Disable_expensive_turret_target_check = false;
 	Shield_percent_skips_damage = 0.1f;
 	Min_radius_for_persistent_debris = 50.0f;
+	Zero_radius_explosions_skip_fireballs = false;
 }
 
 void mod_table_set_version_flags()
@@ -1873,5 +1918,8 @@ void mod_table_set_version_flags()
 		Fix_asteroid_bounding_box_check = true;
 		Disable_expensive_turret_target_check = true;
 		Skybox_internal_depth_consistency = true;
+	}
+	if (mod_supports_version(26, 0, 0)) {
+		Zero_radius_explosions_skip_fireballs = true;
 	}
 }

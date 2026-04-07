@@ -59,6 +59,7 @@ static void parse_shadow_quality_func()
 	}
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto ShadowQualityOption = options::OptionBuilder<ShadowQuality>("Graphics.Shadows",
                      std::pair<const char*, int>{"Shadow Quality", 1750},
                      std::pair<const char*, int>{"The quality of the shadows", 1751})
@@ -509,6 +510,7 @@ void shadows_render_all(fov_t fov, matrix *eye_orient, vec3d *eye_pos)
 		switch(objp->type)
 		{
 		case OBJ_RAW_POF:
+		case OBJ_PROP:
 		case OBJ_SHIP:
 			{
 				obj_queue_render(objp, &scene);

@@ -139,8 +139,12 @@ struct oo_general_info {
 
 oo_general_info Oo_info;
 
-// flags
-bool Afterburn_hack = false;			// HACK!!!
+// This is part of a fix for AB trails and related model animations not working
+// for other ships in multi. The "hack" part is so the fix applies to hosts as well.
+// This could possibly be revisited in a future multi bump with a better solution - taylor
+// See: https://github.com/scp-fs2open/fs2open.github.com/commit/186bd01
+// Or: "mantis bug 895 response" in SCP Internal on HLP forums
+static bool Afterburn_hack = false;			// HACK!!!
 
 // returns the last frame's index.
 int multi_find_prev_frame_idx();
@@ -632,10 +636,9 @@ void multi_ship_record_do_rollback()
 
 	// set up all restore points and ship portion of the collision list
 	for (ship& cur_ship : Ships) {
-
-		// once this happens, we've run out of ships.
+		// skip destroyed ships
 		if (cur_ship.objnum < 0) {
-			break;
+			continue;
 		}
 
 		objp = &Objects[cur_ship.objnum];
@@ -904,10 +907,10 @@ void multi_ship_record_signal_update(int objnum, TIMESTAMP lower_time_limit, TIM
 		}
 	}
 
-	if (prev_index < 0 || post_index < 0) { 
-		mprintf(("Getting prev_index %d and post_index %d, which is not valid, while trying to update the ship record.\n", prev_index, post_index));
+	if ((prev_index < 0) || (prev_index == post_index)) {
 		return;
-	} else if (prev_index == post_index) {
+	} else if (post_index < 0) {
+		mprintf(("Getting prev_index %d and post_index %d, which is not valid, while trying to update the ship record.\n", prev_index, post_index));
 		return;
 	}
 
@@ -1490,16 +1493,18 @@ int multi_oo_pack_data(net_player *pl, object *objp, ushort oo_flags, ubyte *dat
 		auto submode = (short)(aip->submode);
 		ushort target_signature = 0;
 
-		// either send out the waypoint they are trying to get to *or* their current target
+		// either send out the waypoint they are trying to get to *or* their current target.
 		if (umode == AIM_WAYPOINTS) {
 			// if it's already started pointing to a waypoint, grab its net_signature and send that instead
 			waypoint* wp;
 			if ((wp = find_waypoint_at_indexes(aip->wp_list_index, aip->wp_index)) != nullptr) {
 				target_signature = Objects[wp->get_objnum()].net_signature;
 			}
-		} // send the target signature. 2021 Version!
-		else if ((aip->goals[0].target_name != nullptr) && strlen(aip->goals[0].target_name) != 0) {
-			
+		} else if (aip->target_objnum >= 0) {
+			// prefer live target_objnum so clients can check both ordered goal targets and spontaneous targets
+			target_signature = Objects[aip->target_objnum].net_signature;
+		}  else if ((aip->goals[0].target_name != nullptr) && strlen(aip->goals[0].target_name) != 0) {
+			// send the target signature. 2021 Version!
 			int instance = ship_name_lookup(aip->goals[0].target_name);
 			if (instance > -1) {
 				target_signature = Objects[Ships[instance].objnum].net_signature;
@@ -1838,10 +1843,18 @@ int multi_oo_unpack_data(net_player* pl, ubyte* data, int seq_num, int time_delt
 	// SPECIAL CLIENT INFO
 	// ---------------------------------------------------------------------------------------------------------------
 
+	// make sure the ab hack is reset before we read in new info
+	Afterburn_hack = false;
+
 	// if this is from a player, read his button info
 	if(MULTIPLAYER_MASTER){
 		int r0 = multi_oo_unpack_client_data(pl, data + offset, seq_num > Interp_info[objnum].get_client_info_comparison_frame());
 		offset += r0;
+
+		// update comparison frame
+		if (seq_num > Interp_info[objnum].get_client_info_comparison_frame()) {
+			Interp_info[objnum].set_client_info_comparison_frame(seq_num);
+		}
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
@@ -2127,15 +2140,6 @@ int multi_oo_unpack_data(net_player* pl, ubyte* data, int seq_num, int time_delt
 
 		if( seq_num > Interp_info[objnum].get_ai_comparison_frame() ){
 			if ( shipp->ai_index >= 0 ){
-				// make sure to undo the wrap if it occurred during compression for unset ai mode.
-				if (umode == 255) {
-					Ai_info[shipp->ai_index].mode = -1; 
-				}
-				else {
-					Ai_info[shipp->ai_index].mode = umode;
-				}
-				Ai_info[shipp->ai_index].submode = submode;		
-
 				// set this guy's target objnum, and other info
 				target_objp = multi_get_network_object( target_signature );
 
@@ -2182,29 +2186,30 @@ int multi_oo_unpack_data(net_player* pl, ubyte* data, int seq_num, int time_delt
 		GET_INT(ai_submode);
 		GET_USHORT(dock_sig);		
 
-		// verify that it's a valid ship							
-		if((shipp != nullptr) && (shipp->ai_index >= 0) && (shipp->ai_index < MAX_AI_INFO)){
-			// bash ai info, this info does not get rebashed, because it is not as vital.
-			Ai_info[shipp->ai_index].ai_flags.from_u64(ai_flags);
-			Ai_info[shipp->ai_index].mode = ai_mode;
-			Ai_info[shipp->ai_index].submode = ai_submode;
+		if (seq_num > Interp_info[objnum].get_support_comparison_frame()) {
+			// verify that it's a valid ship
+			if((shipp != nullptr) && (shipp->ai_index >= 0) && (shipp->ai_index < MAX_AI_INFO)){
+				// bash ai info, this info does not get rebashed, because it is not as vital.
+				Ai_info[shipp->ai_index].ai_flags.from_u64(ai_flags);
+				Ai_info[shipp->ai_index].mode = ai_mode;
+				Ai_info[shipp->ai_index].submode = ai_submode;
 
-			object *objp = multi_get_network_object( dock_sig );
-			if(objp != nullptr){
-				Ai_info[shipp->ai_index].support_ship_objnum = OBJ_INDEX(objp);
-				if ((objp->instance > -1) && (objp->type == OBJ_SHIP)) {
-					Ai_info[shipp->ai_index].goals[0].target_name = Ships[objp->instance].ship_name;
-					Ai_info[shipp->ai_index].goals[0].target_signature = objp->signature;
-				} else {
-					Ai_info[shipp->ai_index].goals[0].target_name = nullptr;
-					Ai_info[shipp->ai_index].goals[0].target_signature = 0;
+				object *objp = multi_get_network_object( dock_sig );
+				if(objp != nullptr){
+					Ai_info[shipp->ai_index].support_ship_objnum = OBJ_INDEX(objp);
+					if ((objp->instance > -1) && (objp->type == OBJ_SHIP)) {
+						Ai_info[shipp->ai_index].goals[0].target_name = Ships[objp->instance].ship_name;
+						Ai_info[shipp->ai_index].goals[0].target_signature = objp->signature;
+					} else {
+						Ai_info[shipp->ai_index].goals[0].target_name = nullptr;
+						Ai_info[shipp->ai_index].goals[0].target_signature = 0;
+					}
 				}
 			}
-		}			
-	} 
 
-	// make sure the ab hack is reset before we read in new info
-	Afterburn_hack = false;
+			Interp_info[objnum].set_support_comparison_frame(seq_num);
+		}
+	}
 
 	// afterburner info
 	if ( (oo_flags & OO_AFTERBURNER_NEW) || Afterburn_hack ) {

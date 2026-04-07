@@ -56,19 +56,22 @@ enum class LineEndingType { UNKNOWN, CR, CRLF, LF };
 
 #define PARSE_BUF_SIZE			4096
 
-#define	SHIP_TYPE			0	// used to identify which kind of array to do a search for a name in
-#define	SHIP_INFO_TYPE		1
-#define	WEAPON_LIST_TYPE	2	//	to parse an int_list of weapons
-#define	RAW_INTEGER_TYPE	3	//	to parse a list of integers
-#define	WEAPON_POOL_TYPE	4
+enum class ParseLookupType
+{
+	RAW_INTEGER_TYPE,   // to parse a list of integers
+	SHIP_TYPE,          // used to identify which kind of array to do a search for a name in
+	SHIP_INFO_TYPE,
+	WEAPON_LIST_TYPE,   // to parse an int_list of weapons
+	WEAPON_POOL_TYPE,
+	FIREBALL_INFO_TYPE,
+	MISSION_LOADOUT_SHIP_LIST,
+	MISSION_LOADOUT_WEAPON_LIST,
+	CAMPAIGN_LOADOUT_SHIP_LIST,
+	CAMPAIGN_LOADOUT_WEAPON_LIST,
+};
 
 // Karajorma - Used by the stuff_ship_list and stuff_weapon_list SEXPs
 #define NOT_SET_BY_SEXP_VARIABLE	-1
-
-#define MISSION_LOADOUT_SHIP_LIST		5
-#define MISSION_LOADOUT_WEAPON_LIST		6
-#define CAMPAIGN_LOADOUT_SHIP_LIST		7
-#define CAMPAIGN_LOADOUT_WEAPON_LIST	8
 
 #define SEXP_SAVE_MODE				1
 #define SEXP_ERROR_CHECK_MODE		2
@@ -81,13 +84,15 @@ extern const char *get_pointer_to_first_hash_symbol(const char *src, bool ignore
 extern int get_index_of_first_hash_symbol(const SCP_string &src, bool ignore_doubled_hash = false);
 
 extern void consolidate_double_characters(char *str, char ch);
+extern void consolidate_double_characters(SCP_string &str, char ch);
 
 // for limiting strings that may be very long; useful for dialog boxes
 char *three_dot_truncate(char *buffer, const char *source, size_t buffer_size);
 
 // white space
-extern int is_white_space(char ch);
-extern int is_white_space(unicode::codepoint_t cp);
+extern bool is_white_space(char ch);
+extern bool is_white_space(unicode::codepoint_t cp);
+extern size_t find_white_space(const char *str);
 extern void ignore_white_space(const char **pp = nullptr);
 extern void drop_trailing_white_space(char *str);
 extern void drop_leading_white_space(char *str);
@@ -99,8 +104,9 @@ extern void drop_leading_white_space(SCP_string &str);
 extern void drop_white_space(SCP_string &str);
 
 // gray space
-extern int is_gray_space(char ch);
+extern bool is_gray_space(char ch);
 extern bool is_gray_space(unicode::codepoint_t cp);
+extern size_t find_gray_space(const char *str);
 extern void ignore_gray_space(const char **pp = nullptr);
 
 // other
@@ -257,8 +263,8 @@ void stuff_flagset(T *dest) {
     diag_printf("Stuffed flagset: %" PRIu64 "\n", dest->to_u64());
 }
 
-extern size_t stuff_int_list(int *ilp, size_t max_ints, int lookup_type = RAW_INTEGER_TYPE, bool warn_on_lookup_failure = true);
-extern void stuff_int_list(SCP_vector<int> &ilp, int lookup_type = RAW_INTEGER_TYPE, bool warn_on_lookup_failure = true);
+extern size_t stuff_int_list(int *ilp, size_t max_ints, ParseLookupType lookup_type = ParseLookupType::RAW_INTEGER_TYPE, bool warn_on_lookup_failure = true);
+extern void stuff_int_list(SCP_vector<int> &ilp, ParseLookupType lookup_type = ParseLookupType::RAW_INTEGER_TYPE, bool warn_on_lookup_failure = true);
 extern size_t stuff_float_list(float* flp, size_t max_floats);
 extern void stuff_float_list(SCP_vector<float>& flp);
 extern size_t stuff_vec3d_list(vec3d *vlp, size_t max_vecs);
@@ -389,6 +395,7 @@ SCP_vector<std::pair<size_t, size_t>> str_wrap_to_width(const char* source_strin
 extern int required_string_fred(const char *pstr, const char *end = NULL);
 extern int required_string_either_fred(const char *str1, const char *str2);
 extern int optional_string_fred(const char *pstr, const char *end = NULL, const char *end2 = NULL);
+extern int required_string_one_of_fred(int arg_count, ...);
 
 // Goober5000
 extern ptrdiff_t replace_one(char *str, const char *oldstr, const char *newstr, size_t max_len, ptrdiff_t range = 0);
@@ -408,8 +415,9 @@ extern char *stristr(char *str, const char *substr);
 extern bool can_construe_as_integer(const char *text);
 
 // Goober5000 (ditto for C++)
-extern void vsprintf(SCP_string &dest, const char *format, va_list ap);
+extern void vsprintf(SCP_string &dest, const char *format, va_list ap, size_t write_offset = 0);
 extern void sprintf(SCP_string &dest, SCP_FORMAT_STRING const char *format, ...) SCP_FORMAT_STRING_ARGS(2, 3);
+extern void sprintf_concat(SCP_string &dest, SCP_FORMAT_STRING const char *format, ...) SCP_FORMAT_STRING_ARGS(2, 3);
 
 // Goober5000
 extern int subsystem_stricmp(const char *str1, const char *str2);
@@ -449,7 +457,7 @@ struct loadout_row
 };
 
 //Karajorma/Goober5000 - Parses mission and campaign ship loadouts.
-void stuff_loadout_list(SCP_vector<loadout_row> &list, int lookup_type);
+void stuff_loadout_list(SCP_vector<loadout_row> &list, ParseLookupType lookup_type);
 int get_string_or_variable (char *str);
 int get_string_or_variable (SCP_string &str);
 #define PARSING_FOUND_STRING		0

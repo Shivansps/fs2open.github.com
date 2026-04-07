@@ -5,26 +5,29 @@
 #include <object/object.h>
 #include <render/3d.h>
 #include <ship/ship.h>
-#include <io/key.h>
+#include "ui/ControlBindings.h"
 #include <io/spacemouse.h>
 
 #include "object.h"
 
 #include "EditorViewport.h"
+#include <QSettings>
 #include <math/fvi.h>
 #include <jumpnode/jumpnode.h>
+#include <mission/missionparse.h>
+#include <prop/prop.h>
 #include <FredApplication.h>
 
 namespace {
+
+constexpr auto SETTINGS_GROUP = "Preferences";
 
 const fix MAX_FRAMETIME = (F1_0 / 4); // Frametime gets saturated at this.
 const fix MIN_FRAMETIME = (F1_0 / 120);
 
 const float REDUCER = 100.0f;
 
-void process_movement_keys(int key, vec3d* mvec, angles* angs) {
-	int raw_key;
-
+void process_movement_keys(const fso::fred::ControlBindings& bindings, vec3d* mvec, angles* angs) {
 	mvec->xyz.x = 0.0f;
 	mvec->xyz.y = 0.0f;
 	mvec->xyz.z = 0.0f;
@@ -32,52 +35,35 @@ void process_movement_keys(int key, vec3d* mvec, angles* angs) {
 	angs->b = 0.0f;
 	angs->h = 0.0f;
 
-	raw_key = key & 0xff;
-
-	switch (raw_key) {
-	case KEY_PAD1:
+	if (bindings.isPressed(fso::fred::ControlAction::MoveLeft)) {
 		mvec->xyz.x += -1.0f;
-		break;
-	case KEY_PAD3:
-		mvec->xyz.x += +1.0f;
-		break;
-	case KEY_PADPLUS:
-		mvec->xyz.y += -1.0f;
-		break;
-	case KEY_PADMINUS:
-		mvec->xyz.y += +1.0f;
-		break;
-	case KEY_A:
-		mvec->xyz.z += +1.0f;
-		break;
-	case KEY_Z:
-		mvec->xyz.z += -1.0f;
-		break;
-	case KEY_PAD4:
-		angs->h += -0.1f;
-		break;
-	case KEY_PAD6:
-		angs->h += +0.1f;
-		break;
-	case KEY_PAD8:
-		angs->p += -0.1f;
-		break;
-	case KEY_PAD2:
-		angs->p += +0.1f;
-		break;
-	case KEY_PAD7:
-		angs->b += -0.1f;
-		break;
-	case KEY_PAD9:
-		angs->b += +0.1f;
-		break;
 	}
-
-	if (key & KEY_SHIFTED) {
-		vm_vec_scale(mvec, 5.0f);
-		angs->p *= 5.0f;
-		angs->b *= 5.0f;
-		angs->h *= 5.0f;
+	if (bindings.isPressed(fso::fred::ControlAction::MoveRight)) {
+		mvec->xyz.x += 1.0f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::MoveForward)) {
+		mvec->xyz.y += 1.0f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::MoveBackward)) {
+		mvec->xyz.y += -1.0f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::MoveUp)) {
+		mvec->xyz.z += 1.0f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::MoveDown)) {
+		mvec->xyz.z += -1.0f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::YawLeft)) {
+		angs->h += -0.1f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::YawRight)) {
+		angs->h += 0.1f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::PitchUp)) {
+		angs->p += -0.1f;
+	}
+	if (bindings.isPressed(fso::fred::ControlAction::PitchDown)) {
+		angs->p += 0.1f;
 	}
 }
 void align_vector_to_axis(vec3d* v) {
@@ -127,6 +113,8 @@ void verticalize_object(matrix* orient) {
 namespace fso {
 namespace fred {
 
+const char* EditorViewport::DefaultLayerName = "Default";
+
 EditorViewport::EditorViewport(Editor* in_editor, std::unique_ptr<FredRenderer>&& in_renderer) :
 	_renderer(std::move(in_renderer)), editor(in_editor) {
 	renderer = _renderer.get();
@@ -138,8 +126,41 @@ EditorViewport::EditorViewport(Editor* in_editor, std::unique_ptr<FredRenderer>&
 	resetView();
 
 	memset(&saved_cam_orient, 0, sizeof(saved_cam_orient));
+	_layerNames.emplace_back(DefaultLayerName);
+	_layerVisibility.push_back(true);
+	syncMissionLayerNames();
+
+	loadSettings();
 
 	fredApp->runAfterInit([this]() { initialSetup(); });
+}
+
+void EditorViewport::loadSettings() {
+	QSettings settings;
+	settings.beginGroup(SETTINGS_GROUP);
+	Move_ships_when_undocking          = settings.value("move_ships_when_undocking",          Move_ships_when_undocking).toBool();
+	Always_save_display_names          = settings.value("always_save_display_names",          Always_save_display_names).toBool();
+	Error_checker_checks_potential_issues = settings.value("error_checker_checks_potential_issues", Error_checker_checks_potential_issues).toBool();
+	Show_sexp_help_mission_events      = settings.value("show_sexp_help_mission_events",      Show_sexp_help_mission_events).toBool();
+	Show_sexp_help_mission_goals       = settings.value("show_sexp_help_mission_goals",       Show_sexp_help_mission_goals).toBool();
+	Show_sexp_help_mission_cutscenes   = settings.value("show_sexp_help_mission_cutscenes",   Show_sexp_help_mission_cutscenes).toBool();
+	Show_sexp_help_ship_editor         = settings.value("show_sexp_help_ship_editor",         Show_sexp_help_ship_editor).toBool();
+	Show_sexp_help_wing_editor         = settings.value("show_sexp_help_wing_editor",         Show_sexp_help_wing_editor).toBool();
+	settings.endGroup();
+}
+
+void EditorViewport::saveSettings() const {
+	QSettings settings;
+	settings.beginGroup(SETTINGS_GROUP);
+	settings.setValue("move_ships_when_undocking",           Move_ships_when_undocking);
+	settings.setValue("always_save_display_names",           Always_save_display_names);
+	settings.setValue("error_checker_checks_potential_issues", Error_checker_checks_potential_issues);
+	settings.setValue("show_sexp_help_mission_events",       Show_sexp_help_mission_events);
+	settings.setValue("show_sexp_help_mission_goals",        Show_sexp_help_mission_goals);
+	settings.setValue("show_sexp_help_mission_cutscenes",    Show_sexp_help_mission_cutscenes);
+	settings.setValue("show_sexp_help_ship_editor",          Show_sexp_help_ship_editor);
+	settings.setValue("show_sexp_help_wing_editor",          Show_sexp_help_wing_editor);
+	settings.endGroup();
 }
 void EditorViewport::needsUpdate() {
 	_renderer->scheduleUpdate();
@@ -179,6 +200,9 @@ void EditorViewport::select_objects(const Marking_box& box) {
 	while (ptr != END_OF_LIST(&obj_used_list)) {
 		valid = 1;
 		if (ptr->flags[Object::Object_Flags::Hidden, Object::Object_Flags::Locked_from_editing]) {
+			valid = 0;
+		}
+		if (!isObjectVisibleInLayer(ptr)) {
 			valid = 0;
 		}
 
@@ -292,37 +316,19 @@ void EditorViewport::move_mouse(int btn, int mdx, int mdy) {
 }
 
 ///////////////////////////////////////////////////
-void EditorViewport::process_system_keys(int key) {
-	//	mprintf(("Key = %d\n", key));
-	switch (key) {
-	case KEY_LAPOSTRO:
-		///! \todo cycle through axis-constraints for rotations.
-		//CFREDView::GetView()->cycle_constraint();
-		break;
-
-	case KEY_R: // for some stupid reason, an accelerator for 'R' doesn't work.
-		///! \todo Change editing mode to 'move and rotate'.
-		//Editing_mode = 2;
-		break;
-
-	case KEY_SPACEBAR:
+void EditorViewport::process_system_keys() {
+	auto& bindings = ControlBindings::instance();
+	if (bindings.takeTriggered(ControlAction::ToggleSelectionLock)) {
 		Selection_lock = !Selection_lock;
-		break;
-
-	case KEY_ESC:
-		///! \todo Cancel drag.
-		//if (button_down)
-		//	cancel_drag();
-
-		break;
 	}
+
 }
 
-void EditorViewport::process_controls(vec3d* pos, matrix* orient, float frametime, int key, int mode) {
+void EditorViewport::process_controls(vec3d* pos, matrix* orient, float frametime, int mode) {
 	static std::unique_ptr<io::spacemouse::SpaceMouse> spacemouse = io::spacemouse::SpaceMouse::searchSpaceMice(0);
 
 	if (Flying_controls_mode) {
-		grid_read_camera_controls(&view_controls, frametime);
+		memset(&view_controls, 0, sizeof(control_info));
 
 		if (spacemouse != nullptr) {
 			auto spacemouse_movement = spacemouse->getMovement();
@@ -335,9 +341,17 @@ void EditorViewport::process_controls(vec3d* pos, matrix* orient, float frametim
 			view_controls.forward += spacemouse_movement.translation.xyz.y;
 		}
 
-		if (key_get_shift_status()) {
-			memset(&view_controls, 0, sizeof(control_info));
-		}
+		auto& bindings = ControlBindings::instance();
+		view_controls.pitch += bindings.isPressed(ControlAction::PitchUp) ? -1.0f : 0.0f;
+		view_controls.pitch += bindings.isPressed(ControlAction::PitchDown) ? 1.0f : 0.0f;
+		view_controls.heading += bindings.isPressed(ControlAction::YawLeft) ? -1.0f : 0.0f;
+		view_controls.heading += bindings.isPressed(ControlAction::YawRight) ? 1.0f : 0.0f;
+		view_controls.sideways += bindings.isPressed(ControlAction::MoveLeft) ? -1.0f : 0.0f;
+		view_controls.sideways += bindings.isPressed(ControlAction::MoveRight) ? 1.0f : 0.0f;
+		view_controls.forward += bindings.isPressed(ControlAction::MoveForward) ? 1.0f : 0.0f;
+		view_controls.forward += bindings.isPressed(ControlAction::MoveBackward) ? -1.0f : 0.0f;
+		view_controls.vertical += bindings.isPressed(ControlAction::MoveUp) ? 1.0f : 0.0f;
+		view_controls.vertical += bindings.isPressed(ControlAction::MoveDown) ? -1.0f : 0.0f;
 
 		if ((fabs(view_controls.pitch) > (frametime / 100)) || (fabs(view_controls.vertical) > (frametime / 100))
 			|| (fabs(view_controls.heading) > (frametime / 100)) || (fabs(view_controls.sideways) > (frametime / 100))
@@ -357,7 +371,7 @@ void EditorViewport::process_controls(vec3d* pos, matrix* orient, float frametim
 		angles rotangs;
 		matrix newmat, rotmat;
 
-		process_movement_keys(key, &movement_vec, &rotangs);
+		process_movement_keys(ControlBindings::instance(), &movement_vec, &rotangs);
 		if (spacemouse != nullptr) {
 			auto spacemouse_movement = spacemouse->getMovement();
 			spacemouse_movement.handleNonlinearities(Fred_spacemouse_nonlinearity);
@@ -411,7 +425,7 @@ bool EditorViewport::inc_mission_time() {
 }
 
 void EditorViewport::game_do_frame(const int cur_object_index) {
-	int key, cmode;
+	int cmode;
 	vec3d viewer_position, control_pos;
 	object* objp;
 	matrix control_orient;
@@ -431,8 +445,7 @@ void EditorViewport::game_do_frame(const int cur_object_index) {
 		viewpoint = 0;
 	}
 
-	key = key_inkey();
-	process_system_keys(key);
+	process_system_keys();
 	cmode = Control_mode;
 	if ((viewpoint == 1) && !cmode) {
 		cmode = 2;
@@ -444,14 +457,14 @@ void EditorViewport::game_do_frame(const int cur_object_index) {
 	//	if ((key & KEY_MASK) == key)  // unmodified
 	switch (cmode) {
 	case 0: //	Control the viewer's location and orientation
-		process_controls(&view_pos, &view_orient, f2fl(Frametime), key, 1);
+		process_controls(&view_pos, &view_orient, f2fl(Frametime), 1);
 		control_pos = view_pos;
 		control_orient = view_orient;
 		break;
 
 	case 2: // Control viewpoint object
 		if (!Objects[view_obj].flags[Object::Object_Flags::Locked_from_editing]) {
-			process_controls(&Objects[view_obj].pos, &Objects[view_obj].orient, f2fl(Frametime), key);
+			process_controls(&Objects[view_obj].pos, &Objects[view_obj].orient, f2fl(Frametime));
 			object_moved(&Objects[view_obj]);
 			control_pos = Objects[view_obj].pos;
 			control_orient = Objects[view_obj].orient;
@@ -469,7 +482,7 @@ void EditorViewport::game_do_frame(const int cur_object_index) {
 			leader_orient = leader->orient; // save original orientation
 			vm_copy_transpose(&leader_transpose, &leader_orient);
 
-			process_controls(&leader->pos, &leader->orient, f2fl(Frametime), key);
+			process_controls(&leader->pos, &leader->orient, f2fl(Frametime));
 			vm_vec_sub(&delta_pos, &leader->pos, &leader_old_pos); // get position change
 			control_pos = leader->pos;
 			control_orient = leader->orient;
@@ -750,6 +763,9 @@ int EditorViewport::object_check_collision(object* objp, vec3d* p0, vec3d* p1, v
 	if (objp->flags[Object::Object_Flags::Hidden, Object::Object_Flags::Locked_from_editing]) {
 		return 0;
 	}
+	if (!isObjectVisibleInLayer(objp)) {
+		return 0;
+	}
 
 	if ((view.Show_ship_models || view.Show_outlines) && (objp->type == OBJ_SHIP)) {
 		mc.model_num = Ship_info[Ships[objp->instance].ship_info_index].model_num; // Fill in the model to check
@@ -838,6 +854,9 @@ int EditorViewport::select_object(int cx, int cy) {
 	}
 
 	for (auto objp = GET_FIRST(&obj_used_list); objp != END_OF_LIST(&obj_used_list); objp = GET_NEXT(objp)) {
+		if (!isObjectVisibleInLayer(objp)) {
+			continue;
+		}
 		g3_rotate_vertex(&vt, &objp->pos);
 		if (!(vt.codes & CC_BEHIND)) {
 			if (!(g3_project_vertex(&vt) & PF_OVERFLOW)) {
@@ -857,6 +876,241 @@ int EditorViewport::select_object(int cx, int cy) {
 	}
 
 	return best;
+}
+
+size_t EditorViewport::getLayerIndex(const SCP_string& name) const {
+	for (size_t i = 0; i < _layerNames.size(); ++i) {
+		if (stricmp(_layerNames[i].c_str(), name.c_str()) == 0) {
+			return i;
+		}
+	}
+	return static_cast<size_t>(-1);
+}
+
+size_t EditorViewport::getObjectLayerIndex(int objectIndex) const {
+	const auto found = _objectLayers.find(objectIndex);
+	if (found == _objectLayers.end() || found->second >= _layerNames.size()) {
+		return 0;
+	}
+	return found->second;
+}
+
+bool EditorViewport::isLayerVisible(size_t layerIndex) const {
+	if (layerIndex >= _layerVisibility.size()) {
+		return true;
+	}
+	return _layerVisibility[layerIndex];
+}
+
+void EditorViewport::syncMissionLayerNames() const {
+	The_mission.fred_layers = _layerNames;
+}
+
+void EditorViewport::setObjectLayerByIndex(int objectIndex, size_t layerIndex) {
+	_objectLayers[objectIndex] = layerIndex;
+
+	const auto& layerName = _layerNames[layerIndex];
+	if (Objects[objectIndex].type == OBJ_SHIP || Objects[objectIndex].type == OBJ_START) {
+		Ships[Objects[objectIndex].instance].fred_layer = layerName;
+	} else if (Objects[objectIndex].type == OBJ_PROP) {
+		auto* prop = prop_id_lookup(Objects[objectIndex].instance);
+		if (prop != nullptr) {
+			prop->fred_layer = layerName;
+		}
+	}
+}
+
+SCP_vector<SCP_string> EditorViewport::getLayerNames() const {
+	return _layerNames;
+}
+
+bool EditorViewport::addLayer(const SCP_string& name, SCP_string* errorMessage) {
+	if (name.empty()) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "Layer name cannot be empty.";
+		}
+		return false;
+	}
+	if (getLayerIndex(name) != static_cast<size_t>(-1)) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "Layer names must be unique.";
+		}
+		return false;
+	}
+
+	_layerNames.push_back(name);
+	_layerVisibility.push_back(true);
+	syncMissionLayerNames();
+	return true;
+}
+
+bool EditorViewport::deleteLayer(const SCP_string& name, SCP_string* errorMessage) {
+	const auto layerIndex = getLayerIndex(name);
+	if (layerIndex == static_cast<size_t>(-1)) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "Layer does not exist.";
+		}
+		return false;
+	}
+	if (layerIndex == 0) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "The default layer cannot be deleted.";
+		}
+		return false;
+	}
+
+	_layerNames.erase(_layerNames.begin() + static_cast<SCP_vector<SCP_string>::difference_type>(layerIndex));
+	_layerVisibility.erase(_layerVisibility.begin() + static_cast<SCP_vector<bool>::difference_type>(layerIndex));
+
+	for (auto& objectLayer : _objectLayers) {
+		if (objectLayer.second == layerIndex) {
+			setObjectLayerByIndex(objectLayer.first, 0);
+		} else if (objectLayer.second > layerIndex) {
+			--objectLayer.second;
+		}
+	}
+	syncMissionLayerNames();
+	return true;
+}
+
+bool EditorViewport::setLayerVisibility(const SCP_string& name, bool visible, SCP_string* errorMessage) {
+	const auto layerIndex = getLayerIndex(name);
+	if (layerIndex == static_cast<size_t>(-1)) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "Layer does not exist.";
+		}
+		return false;
+	}
+
+	_layerVisibility[layerIndex] = visible;
+	if (!visible) {
+		for (auto objp = GET_FIRST(&obj_used_list); objp != END_OF_LIST(&obj_used_list); objp = GET_NEXT(objp)) {
+			if (getObjectLayerIndex(OBJ_INDEX(objp)) == layerIndex && objp->flags[Object::Object_Flags::Marked]) {
+				editor->unmarkObject(OBJ_INDEX(objp));
+			}
+		}
+	}
+
+	needsUpdate();
+	return true;
+}
+
+bool EditorViewport::getLayerVisibility(const SCP_string& name, bool* visible, SCP_string* errorMessage) const {
+	const auto layerIndex = getLayerIndex(name);
+	if (layerIndex == static_cast<size_t>(-1)) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "Layer does not exist.";
+		}
+		return false;
+	}
+
+	if (visible != nullptr) {
+		*visible = isLayerVisible(layerIndex);
+	}
+	return true;
+}
+
+void EditorViewport::showAllLayers() {
+	std::fill(_layerVisibility.begin(), _layerVisibility.end(), true);
+	needsUpdate();
+}
+
+int EditorViewport::getHiddenLayerCount() const {
+	return static_cast<int>(std::count(_layerVisibility.begin(), _layerVisibility.end(), false));
+}
+
+void EditorViewport::reloadLayersFromMission() {
+	_layerNames.clear();
+	_layerVisibility.clear();
+	_objectLayers.clear();
+
+	if (The_mission.fred_layers.empty()) {
+		_layerNames.emplace_back(DefaultLayerName);
+	} else {
+		_layerNames = The_mission.fred_layers;
+	}
+
+	if (_layerNames.empty() || _layerNames.front() != DefaultLayerName) {
+		_layerNames.insert(_layerNames.begin(), DefaultLayerName);
+	}
+
+	_layerVisibility.resize(_layerNames.size(), true);
+	syncMissionLayerNames();
+
+	for (int objectIndex = 0; objectIndex < MAX_OBJECTS; ++objectIndex) {
+		auto* objp = &Objects[objectIndex];
+		if (objp->type == OBJ_NONE) {
+			continue;
+		}
+
+		size_t layerIndex = 0;
+		if (objp->type == OBJ_SHIP || objp->type == OBJ_START) {
+			const auto found = getLayerIndex(Ships[objp->instance].fred_layer);
+			layerIndex = found == static_cast<size_t>(-1) ? 0 : found;
+		} else if (objp->type == OBJ_PROP) {
+			auto* prop = prop_id_lookup(objp->instance);
+			if (prop != nullptr) {
+				const auto found = getLayerIndex(prop->fred_layer);
+				layerIndex = found == static_cast<size_t>(-1) ? 0 : found;
+			}
+		}
+
+		setObjectLayerByIndex(objectIndex, layerIndex);
+	}
+
+	needsUpdate();
+}
+
+SCP_string EditorViewport::getObjectLayerName(int objectIndex) const {
+	const auto layerIndex = getObjectLayerIndex(objectIndex);
+	if (layerIndex >= _layerNames.size()) {
+		return DefaultLayerName;
+	}
+	return _layerNames[layerIndex];
+}
+
+bool EditorViewport::moveObjectToLayer(int objectIndex, const SCP_string& layerName, SCP_string* errorMessage) {
+	const auto layerIndex = getLayerIndex(layerName);
+	if (layerIndex == static_cast<size_t>(-1)) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "Layer does not exist.";
+		}
+		return false;
+	}
+
+	setObjectLayerByIndex(objectIndex, layerIndex);
+	if (!isLayerVisible(layerIndex)) {
+		editor->unmarkObject(objectIndex);
+	}
+	needsUpdate();
+	return true;
+}
+
+void EditorViewport::moveMarkedObjectsToLayer(const SCP_string& layerName, SCP_string* errorMessage) {
+	const auto layerIndex = getLayerIndex(layerName);
+	if (layerIndex == static_cast<size_t>(-1)) {
+		if (errorMessage != nullptr) {
+			*errorMessage = "Layer does not exist.";
+		}
+		return;
+	}
+
+	for (auto objp = GET_FIRST(&obj_used_list); objp != END_OF_LIST(&obj_used_list); objp = GET_NEXT(objp)) {
+		if (objp->flags[Object::Object_Flags::Marked]) {
+			setObjectLayerByIndex(OBJ_INDEX(objp), layerIndex);
+			if (!isLayerVisible(layerIndex)) {
+				editor->unmarkObject(OBJ_INDEX(objp));
+			}
+		}
+	}
+	needsUpdate();
+}
+
+bool EditorViewport::isObjectVisibleInLayer(const object* objp) const {
+	if (objp == nullptr) {
+		return true;
+	}
+	return isLayerVisible(getObjectLayerIndex(OBJ_INDEX(objp)));
 }
 
 void EditorViewport::drag_rotate_save_backup() {
@@ -880,6 +1134,10 @@ void EditorViewport::drag_rotate_save_backup() {
 }
 
 int EditorViewport::create_object_on_grid(int x, int y, int waypoint_instance) {
+	return create_object_on_grid(x, y, waypoint_instance, false);
+}
+
+int EditorViewport::create_object_on_grid(int x, int y, int waypoint_instance, bool create_prop) {
 	int obj = -1;
 	float rval;
 	vec3d dir, pos;
@@ -890,7 +1148,7 @@ int EditorViewport::create_object_on_grid(int x, int y, int waypoint_instance) {
 
 	if (rval >= 0.0f) {
 		editor->unmark_all();
-		obj = create_object(&pos, waypoint_instance);
+		obj = create_object(&pos, waypoint_instance, create_prop);
 		if (obj >= 0) {
 			editor->markObject(obj);
 
@@ -904,27 +1162,38 @@ int EditorViewport::create_object_on_grid(int x, int y, int waypoint_instance) {
 
 	return obj;
 }
-int EditorViewport::create_object(vec3d* pos, int waypoint_instance) {
+int EditorViewport::create_object(vec3d* pos, int waypoint_instance, bool create_prop) {
 
 	int obj, n;
-
-	if (cur_model_index == editor->Id_select_type_waypoint) {
-		obj = editor->create_waypoint(pos, waypoint_instance);
-	} else if (cur_model_index == editor->Id_select_type_jump_node) {
-		CJumpNode jnp(pos);
-		obj = jnp.GetSCPObjectNumber();
-		Jump_nodes.push_back(std::move(jnp));
-	} else if(Ship_info[cur_model_index].flags[Ship::Info_Flags::No_fred]){
-		obj = -1;
-	} else {  // creating a ship
-		obj = editor->create_ship(NULL, pos, cur_model_index);
-		if (obj == -1)
+	if (create_prop) {
+		if (cur_prop_index < 0 || cur_prop_index >= prop_info_size()) {
 			return -1;
+		}
 
-		n = Objects[obj].instance;
-		Ships[n].arrival_cue = alloc_sexp("true", SEXP_ATOM, SEXP_ATOM_OPERATOR, -1, -1);
-		Ships[n].departure_cue = alloc_sexp("false", SEXP_ATOM, SEXP_ATOM_OPERATOR, -1, -1);
-		Ships[n].cargo1 = 0;
+		obj = prop_create(nullptr, pos, cur_prop_index);
+		if (obj == -1) {
+			return -1;
+		}
+	} else {
+
+		if (cur_model_index == editor->Id_select_type_waypoint) {
+			obj = editor->create_waypoint(pos, waypoint_instance);
+		} else if (cur_model_index == editor->Id_select_type_jump_node) {
+			CJumpNode jnp(pos);
+			obj = jnp.GetSCPObjectNumber();
+			Jump_nodes.push_back(std::move(jnp));
+		} else if(Ship_info[cur_model_index].flags[Ship::Info_Flags::No_fred]){
+			obj = -1;
+		} else {  // creating a ship
+			obj = editor->create_ship(nullptr, pos, cur_model_index);
+			if (obj == -1)
+				return -1;
+
+			n = Objects[obj].instance;
+			Ships[n].arrival_cue = alloc_sexp("true", SEXP_ATOM, SEXP_ATOM_OPERATOR, -1, -1);
+			Ships[n].departure_cue = alloc_sexp("false", SEXP_ATOM, SEXP_ATOM_OPERATOR, -1, -1);
+			Ships[n].cargo1 = 0;
+		}
 	}
 
 	if (obj < 0)
@@ -937,6 +1206,12 @@ int EditorViewport::create_object(vec3d* pos, int waypoint_instance) {
 }
 void EditorViewport::initialSetup() {
 	cur_model_index = get_default_player_ship_index();
+	for (int i = 0; i < prop_info_size(); ++i) {
+		if (!Prop_info[i].flags[Prop::Info_Flags::No_fred]) {
+			cur_prop_index = i;
+			break;
+		}
+	}
 }
 
 int EditorViewport::duplicate_marked_objects()
@@ -1060,9 +1335,7 @@ int EditorViewport::drag_objects(int x, int y)
 	if (!query_valid_object(editor->currentObject) || Lookat_mode)
 		return -1;
 
-	if (Dup_drag == 1
-		//&& (Briefing_dialog) TODO
-		) {
+	if (Dup_drag == 1) {
 		Dup_drag = 0;
 	}
 
@@ -1156,12 +1429,6 @@ int EditorViewport::drag_objects(int x, int y)
 			objp = GET_NEXT(objp);
 		}
 	}
-
-	/*
-	TODO: Implement brieding dialog
-	if (Briefing_dialog)
-		Briefing_dialog->update_positions();
-	 */
 
 	editor->missionChanged();
 	return rval;
@@ -1277,6 +1544,31 @@ int EditorViewport::drag_rotate_objects(int mouse_dx, int mouse_dy) {
 
 	editor->missionChanged();
 	return rval;
+}
+void EditorViewport::cancel_drag() {
+	if (!button_down) {
+		return;
+	}
+
+	auto objp = GET_FIRST(&obj_used_list);
+	while (objp != END_OF_LIST(&obj_used_list)) {
+		Assert(objp->type != OBJ_NONE);
+		if (objp->flags[Object::Object_Flags::Marked]) {
+			const auto obj_index = OBJ_INDEX(objp);
+			if (!IS_VEC_NULL(&rotation_backup[obj_index].orient.vec.rvec) && !IS_VEC_NULL(&rotation_backup[obj_index].orient.vec.uvec)
+				&& !IS_VEC_NULL(&rotation_backup[obj_index].orient.vec.fvec)) {
+				objp->pos = rotation_backup[obj_index].pos;
+				objp->orient = rotation_backup[obj_index].orient;
+			}
+		}
+
+		objp = GET_NEXT(objp);
+	}
+
+	button_down = false;
+	moved = false;
+	Dup_drag = 0;
+	needsUpdate();
 }
 void EditorViewport::view_universe(bool just_marked) {
 	int max = 0;

@@ -51,6 +51,7 @@ brief_screen bscreen;
 
 float Briefing_Icon_Scale_Factor = 1.0;
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto IconScaleFactor __UNUSED = options::OptionBuilder<float>("Game.BriefIconScaleFactor",
                      std::pair<const char*, int>{"Briefing Icon Scale Factor", 1857},
                      std::pair<const char*, int>{"Scales the size of the briefing icons", 1858})
@@ -140,6 +141,7 @@ debriefing	*Debriefing;						// pointer to correct debriefing
 
 bool Briefing_voice_enabled = true; // flag which turn on/off voice playback of briefings/debriefings
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto BriefingVoiceOption __UNUSED = options::OptionBuilder<bool>("Audio.BriefingVoice",
                      std::pair<const char*, int>{"Briefing voice", 1368},
                      std::pair<const char*, int>{"Enable or disable voice playback in the briefing", 1716})

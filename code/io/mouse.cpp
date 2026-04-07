@@ -54,8 +54,13 @@ int Mouse_dx = 0;
 int Mouse_dy = 0;
 int Mouse_dz = 0;
 
+// Mouse wheel delta tracking movement not position. Resets every frame.
+int Mouse_wheel_dx = 0;
+int Mouse_wheel_dy = 0;
+
 int Mouse_sensitivity = 4;
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto MouseSensitivityOption __UNUSED = options::OptionBuilder<int>("Input.MouseSensitivity",
                      std::pair<const char*, int>{"Sensitivity", 1374},
                      std::pair<const char*, int>{"The sensitivity of the mouse input", 1747})
@@ -72,6 +77,7 @@ bool Use_mouse_to_fly = false;
 
 static SCP_string mouse_mode_display(bool mode) { return mode ? XSTR("Joy-0", 1699) : XSTR("Mouse", 1373); }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto UseMouseOption __UNUSED = options::OptionBuilder<bool>("Input.UseMouse",
                      std::pair<const char*, int>{"Mouse", 1373},
                      std::pair<const char*, int>{"Whether or not to use the mouse for flying", 1765})
@@ -459,7 +465,7 @@ int mouse_up_count(int n) {
 
 // returns 1 if mouse button btn is down, 0 otherwise
 
-int mouse_down(const CC_bind &bind)
+int mouse_down(const CC_bind &bind, bool must_be_wheel)
 {
 	// Bail if the incoming bind is not the right CID according to mouse-fly mode
 	auto CID = bind.get_cid();
@@ -483,20 +489,22 @@ int mouse_down(const CC_bind &bind)
 
 	btn = 1 << btn;
 
-	return mouse_down(btn);
+	return mouse_down(btn, must_be_wheel);
 }
 
-int mouse_down(int btn) {
-	int tmp;
+int mouse_down(int btn, bool must_be_wheel) {
 	if ( !mouse_inited ) return 0;
 
 	// Bail if not a button or wheel direction
 	if ((btn < LOWEST_MOUSE_BUTTON) || (btn > HIGHEST_MOUSE_WHEEL)) return 0;
 
+	// Bail if needs to be a mouse wheel and is not --wookieejedi 
+	if (must_be_wheel && (btn < LOWEST_MOUSE_WHEEL || btn > HIGHEST_MOUSE_WHEEL)) return 0;
+
 
 	SDL_LockMutex( mouse_lock );
 
-
+	int tmp;
 	if (mouse_flags & btn) {
 		tmp = 1;
 		if ((btn >= LOWEST_MOUSE_WHEEL) && (btn <= HIGHEST_MOUSE_WHEEL)) {
@@ -521,6 +529,14 @@ void mouse_get_delta(int *dx, int *dy, int *dz)
 		*dz = Mouse_dz;
 }
 
+void mouse_get_wheel_delta(int* dx, int* dy)
+{
+	if (dx)
+		*dx = Mouse_wheel_dx;
+	if (dy)
+		*dy = Mouse_wheel_dy;
+}
+
 // Forces the actual windows cursor to be at (x,y).  This may be independent of our tracked (x,y) mouse pos.
 void mouse_force_pos(int x, int y)
 {
@@ -533,6 +549,7 @@ void mouse_force_pos(int x, int y)
 void mouse_reset_deltas()
 {
 	Mouse_dx = Mouse_dy = Mouse_dz = 0;
+	Mouse_wheel_dx = Mouse_wheel_dy = 0;
 }
 
 void mouse_event(int x, int y, int dx, int dy)
@@ -633,6 +650,9 @@ void mousewheel_motion(int x, int y, bool reversed) {
 
 	Mouse_wheel_x += x;
 	Mouse_wheel_y += y;
+	// Used for tracking the actual movement of the wheel, not just the current position
+	Mouse_wheel_dx += x;
+	Mouse_wheel_dy += y;
 
 	// These nested if's should take care of all edge cases.
 	// Since x and y's magnitudes can be larger than 1, it is possible to ignore the idle state

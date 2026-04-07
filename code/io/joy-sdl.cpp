@@ -275,6 +275,7 @@ SCP_vector<Joystick*> joystick_enumerator()
  * Joystick options for the new menu system
  * These should be displayed as a dropdown box type widget
  */
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto JoystickOption = options::OptionBuilder<Joystick*>("Input.Joystick",
                      std::pair<const char*, int>{"Joystick 0", 1705},
                      std::pair<const char*, int>{"The current joystick 0", 1706})
@@ -293,6 +294,7 @@ auto JoystickOption = options::OptionBuilder<Joystick*>("Input.Joystick",
                      })
                      .finish();
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto JoystickOption1 = options::OptionBuilder<Joystick*>("Input.Joystick1",
                      std::pair<const char*, int>{"Joystick 1", 1707},
                      std::pair<const char*, int>{"The current joystick 1", 1708})
@@ -311,6 +313,7 @@ auto JoystickOption1 = options::OptionBuilder<Joystick*>("Input.Joystick1",
                      })
                      .finish();
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto JoystickOption2 = options::OptionBuilder<Joystick*>("Input.Joystick2",
                      std::pair<const char*, int>{"Joystick 2", 1709},
                      std::pair<const char*, int>{"The current joystick 2", 1710})
@@ -329,6 +332,7 @@ auto JoystickOption2 = options::OptionBuilder<Joystick*>("Input.Joystick2",
                      })
                      .finish();
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto JoystickOption3 = options::OptionBuilder<Joystick*>("Input.Joystick3",
                      std::pair<const char*, int>{"Joystick 3", 1711},
                      std::pair<const char*, int>{"The current joystick 3", 1712})
@@ -558,7 +562,7 @@ bool device_event_handler(const SDL_Event &evt)
 		// Else, Find if any of our joysticks were lost
 		for (short i = CID_JOY0; i < CID_JOY_MAX; ++i)
 		{
-			if (joyDeviceEvent.which == pJoystick[i]->getID())
+			if (pJoystick[i] != nullptr && joyDeviceEvent.which == pJoystick[i]->getID())
 			{
 				// We just lost our joystick, reset the data
 				mprintf(("Joystick %i disconnected\n", i));

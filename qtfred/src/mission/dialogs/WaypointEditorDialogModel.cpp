@@ -22,17 +22,34 @@ bool WaypointEditorDialogModel::apply()
 	}
 
 	// apply name
-	char old_name[255];
+	char old_name[NAME_LENGTH];
 	strcpy_s(old_name, _editor->cur_waypoint_list->get_name());
-	const char* str = _currentName.c_str();
-	_editor->cur_waypoint_list->set_name(str);
+	_editor->cur_waypoint_list->set_name(_currentName.c_str());
+	auto str = _editor->cur_waypoint_list->get_name();
 	if (strcmp(old_name, str) != 0) {
+		_editor->missionChanged();
 		update_sexp_references(old_name, str);
-		_editor->ai_update_goal_references(sexp_ref_type::WAYPOINT, old_name, str);
-		_editor->update_texture_replacements(old_name, str); // ?? Uh really? Check that FRED does this also
+		_editor->ai_update_goal_references(sexp_ref_type::WAYPOINT_PATH, old_name, str);
+
+		for (auto &wpt : _editor->cur_waypoint_list->get_waypoints()) {
+			char old_buf[NAME_LENGTH];
+			char new_buf[NAME_LENGTH];
+			waypoint_stuff_name(old_buf, old_name, wpt.get_index() + 1);
+			waypoint_stuff_name(new_buf, str, wpt.get_index() + 1);
+			update_sexp_references(old_buf, new_buf);
+			_editor->ai_update_goal_references(sexp_ref_type::WAYPOINT, old_buf, new_buf);
+		}
 	}
 
+	// apply display properties
+	_editor->cur_waypoint_list->set_no_draw_lines(_noDrawLines);
+	if (_hasCustomColor)
+		_editor->cur_waypoint_list->set_color((ubyte)_colorR, (ubyte)_colorG, (ubyte)_colorB);
+	else
+		_editor->cur_waypoint_list->clear_color();
+
 	_editor->missionChanged();
+
 	return true;
 }
 
@@ -53,8 +70,16 @@ void WaypointEditorDialogModel::initializeData()
 
 	if (_editor->cur_waypoint_list != nullptr) {
 		_currentName = _editor->cur_waypoint_list->get_name();
+		_noDrawLines = _editor->cur_waypoint_list->get_no_draw_lines();
+		_hasCustomColor = _editor->cur_waypoint_list->get_has_custom_color();
+		_colorR = _editor->cur_waypoint_list->get_color_r();
+		_colorG = _editor->cur_waypoint_list->get_color_g();
+		_colorB = _editor->cur_waypoint_list->get_color_b();
 	} else {
 		_currentName = "";
+		_noDrawLines = false;
+		_hasCustomColor = false;
+		_colorR = _colorG = _colorB = 255;
 		_enabled = false;
 	}
 
@@ -214,5 +239,18 @@ const SCP_vector<std::pair<SCP_string, int>>& WaypointEditorDialogModel::getWayp
 {
 	return _waypointPathList;
 }
+
+bool WaypointEditorDialogModel::getNoDrawLines() const { return _noDrawLines; }
+void WaypointEditorDialogModel::setNoDrawLines(bool val) { modify(_noDrawLines, val); }
+
+bool WaypointEditorDialogModel::getHasCustomColor() const { return _hasCustomColor; }
+void WaypointEditorDialogModel::setHasCustomColor(bool val) { modify(_hasCustomColor, val); }
+
+int WaypointEditorDialogModel::getColorR() const { return _colorR; }
+int WaypointEditorDialogModel::getColorG() const { return _colorG; }
+int WaypointEditorDialogModel::getColorB() const { return _colorB; }
+void WaypointEditorDialogModel::setColorR(int r) { modify(_colorR, r); }
+void WaypointEditorDialogModel::setColorG(int g) { modify(_colorG, g); }
+void WaypointEditorDialogModel::setColorB(int b) { modify(_colorB, b); }
 
 } // namespace fso::fred::dialogs

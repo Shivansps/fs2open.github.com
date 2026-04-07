@@ -1,19 +1,22 @@
 #include "FredView.h"
 #include "ui_FredView.h"
 
+#include <QDir>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QDebug>
+#include <QKeyEvent>
 #include <QSettings>
 
 #include <project.h>
-#include <io/key.h>
 
 #include <qevent.h>
 #include <FredApplication.h>
 #include <ui/dialogs/ShipEditor/ShipEditorDialog.h>
 #include <ui/dialogs/WingEditorDialog.h>
+#include <ui/dialogs/PropEditorDialog.h>
 #include <ui/dialogs/MissionEventsDialog.h>
+#include <mission/dialogs/MissionEventsDialogModel.h>
 #include <ui/dialogs/AsteroidEditorDialog.h>
 #include <ui/dialogs/VolumetricNebulaDialog.h>
 #include <ui/dialogs/BriefingEditorDialog.h>
@@ -26,6 +29,7 @@
 #include <ui/dialogs/MissionCutscenesDialog.h>
 #include <ui/dialogs/FormWingDialog.h>
 #include <ui/dialogs/AboutDialog.h>
+#include <ui/dialogs/MissionStatsDialog.h>
 #include <ui/dialogs/BackgroundEditorDialog.h>
 #include <ui/dialogs/ShieldSystemDialog.h>
 #include <ui/dialogs/GlobalShipFlagsDialog.h>
@@ -40,11 +44,17 @@
 #include <ui/dialogs/VariableDialog.h>
 #include <ui/dialogs/MusicPlayerDialog.h>
 #include <ui/dialogs/RelativeCoordinatesDialog.h>
+#include <ui/dialogs/SaveAsTemplateDialog.h>
+#include <ui/dialogs/TemplateBrowserDialog.h>
+#include <ui/dialogs/PreferencesDialog.h>
+#include <ui/dialogs/LayerManagerDialog.h>
+#include <ui/ControlBindings.h>
 #include <iff_defs/iff_defs.h>
 
 #include "mission/Editor.h"
 #include "mission/management.h"
-#include "mission/missionsave.h"
+#include "mission/missionparse.h"
+#include "missioneditor/missionsave.h"
 
 #include "widgets/ColorComboBox.h"
 
@@ -94,6 +104,22 @@ FredView::FredView(QWidget* parent) : QMainWindow(parent), ui(new Ui::FredView()
 	initializePopupMenus();
 
 	initializeGroupActions();
+
+	auto propsAction = new QAction(tr("Props"), this);
+	connect(propsAction, &QAction::triggered, this, &FredView::on_actionProps_triggered);
+	ui->menuObjects->insertAction(ui->actionWaypoint_Paths, propsAction);
+
+	connect(ui->actionPreferences, &QAction::triggered, this, [this]() {
+		dialogs::PreferencesDialog preferencesDialog(this, _viewport);
+		preferencesDialog.exec();
+	});
+
+	connect(ui->actionManage_Layers, &QAction::triggered, this, [this]() { openLayerManagerDialog(); });
+	connect(ui->actionUnhide_Layers, &QAction::triggered, this, [this]() {
+		if (_viewport != nullptr) {
+			_viewport->showAllLayers();
+		}
+	});
 }
 
 FredView::~FredView() {
@@ -117,7 +143,14 @@ void FredView::setEditor(Editor* editor, EditorViewport* viewport) {
 	ui->toolBar->addWidget(_shipClassBox.get());
 	connect(_shipClassBox.get(), &ColorComboBox::shipClassSelected, this, &FredView::onShipClassSelected);
 
+	auto propLabel = new QLabel(tr("Props"), ui->toolBar);
+	ui->toolBar->addWidget(propLabel);
+	_propClassBox.reset(new PropComboBox(nullptr));
+	ui->toolBar->addWidget(_propClassBox.get());
+	connect(_propClassBox.get(), &PropComboBox::propClassSelected, this, &FredView::onPropClassSelected);
+
 	connect(fred, &Editor::missionLoaded, this, &FredView::on_mission_loaded);
+	connect(fred, &Editor::missionChanged, this, [this]() { _missionModified = true; });
 
 	// Sets the initial window title
 	on_mission_loaded("");
@@ -130,6 +163,7 @@ void FredView::setEditor(Editor* editor, EditorViewport* viewport) {
 	connect(this, &FredView::viewIdle, this, &FredView::onUpdateCameraControlActions);
 	connect(this, &FredView::viewIdle, this, &FredView::onUpdateSelectionLock);
 	connect(this, &FredView::viewIdle, this, &FredView::onUpdateShipClassBox);
+	connect(this, &FredView::viewIdle, this, &FredView::onUpdatePropClassBox);
 	connect(this, &FredView::viewIdle, this, &FredView::onUpdateEditorActions);
 	connect(this, &FredView::viewIdle, this, &FredView::onUpdateWingActionStatus);
 	connect(this,
@@ -143,20 +177,25 @@ void FredView::setEditor(Editor* editor, EditorViewport* viewport) {
 			this,
 			[this]() { ui->actionRestore_Camera_Pos->setEnabled(!IS_VEC_NULL(&_viewport->saved_cam_orient.vec.fvec)); });
 
-	connect(this, &FredView::viewIdle, this, [this]() { ui->actionMove_Ships_When_Undocking->setChecked(_viewport->Move_ships_when_undocking); });
-	connect(this, &FredView::viewIdle, this, [this]() { ui->actionAlways_Save_Display_Names->setChecked(_viewport->Always_save_display_names); });
-	connect(this, &FredView::viewIdle, this, [this]() { ui->actionError_Checker_Checks_Potential_Issues->setChecked(_viewport->Error_checker_checks_potential_issues); });
 }
 
-void FredView::loadMissionFile(const QString& pathName) {
+void FredView::loadMissionFile(const QString& pathName, int flags) {
+	if (!maybePromptToSaveMissionChanges(tr("loading another mission"))) {
+		return;
+	}
+
 	statusBar()->showMessage(tr("Loading mission %1").arg(pathName));
 	try {
 		QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
 
-		auto pathToLoad = pathName.toStdString();
-		fred->maybeUseAutosave(pathToLoad);
+		// probably good to clear selections in qtFRED too
+		fred->clean_up_selections();
 
-		fred->loadMission(pathToLoad);
+		auto pathToLoad = pathName.toStdString();
+		if (!(flags & MPF_IS_TEMPLATE))
+			fred->maybeUseAutosave(pathToLoad);
+
+		fred->loadMission(pathToLoad, flags);
 
 		QApplication::restoreOverrideCursor();
 	} catch (const fso::fred::mission_load_error&) {
@@ -183,28 +222,136 @@ void FredView::on_actionExit_triggered(bool) {
 }
 
 void FredView::on_actionSave_triggered(bool state) {
-	CFred_mission_save save(_viewport);
+	Q_UNUSED(state);
+	saveMissionToCurrentPath();
+}
+void FredView::on_actionSave_As_triggered(bool) {
+	saveMissionAs();
+}
+
+bool FredView::saveMissionToCurrentPath() {
+	Fred_mission_save save;
+	// TODO FredView save format actions currently don't do anything
+	// will need to wire this up when those are finalized
+	/*if (Mission_save_format == FSO_FORMAT_RETAIL) {
+		save.set_save_format(MissionFormat::RETAIL);
+	} else if (Mission_save_format == FSO_FORMAT_COMPATIBILITY_MODE) {
+		save.set_save_format(MissionFormat::COMPATIBILITY_MODE);
+	} else {
+		save.set_save_format(MissionFormat::STANDARD);
+	}*/
+	save.set_always_save_display_names(_viewport->Always_save_display_names);
+	save.set_view_pos(_viewport->view_pos);
+	save.set_view_orient(_viewport->view_orient);
+	save.set_fred_alt_names(Fred_alt_names);
+	save.set_fred_callsigns(Fred_callsigns);
 
 	if (saveName.isEmpty()) {
-		on_actionSave_As_triggered(state);
-		return;
+		return saveMissionAs();
 	}
 
 	save.save_mission_file(saveName.replace('/', DIR_SEPARATOR_CHAR).toUtf8().constData());
+	_missionModified = false;
+	return true;
 }
-void FredView::on_actionSave_As_triggered(bool) {
-	CFred_mission_save save(_viewport);
+bool FredView::saveMissionAs() {
+	Fred_mission_save save;
+	// TODO FredView save format actions currently don't do anything
+	// will need to wire this up when those are finalized
+	/*if (Mission_save_format == FSO_FORMAT_RETAIL) {
+		save.set_save_format(MissionFormat::RETAIL);
+	} else if (Mission_save_format == FSO_FORMAT_COMPATIBILITY_MODE) {
+		save.set_save_format(MissionFormat::COMPATIBILITY_MODE);
+	} else {
+		save.set_save_format(MissionFormat::STANDARD);
+	}*/
+	save.set_always_save_display_names(_viewport->Always_save_display_names);
+	save.set_view_pos(_viewport->view_pos);
+	save.set_view_orient(_viewport->view_orient);
+	save.set_fred_alt_names(Fred_alt_names);
+	save.set_fred_callsigns(Fred_callsigns);
 
 	saveName = QFileDialog::getSaveFileName(this, tr("Save mission"), QString(), tr("FS2 missions (*.fs2)"));
 
 	if (saveName.isEmpty()) {
-		return;
+		return false;
 	}
 
 	save.save_mission_file(saveName.replace('/',DIR_SEPARATOR_CHAR).toUtf8().constData());
+	_missionModified = false;
+	return true;
+}
+
+void FredView::saveAsTemplate() {
+	// Collect template metadata first
+	dialogs::SaveAsTemplateDialog metaDialog(this, getUsername());
+	if (metaDialog.exec() != QDialog::Accepted)
+		return;
+
+	// Default to data/missions/templates/ and create it if needed
+	QString templatesDir = QDir::currentPath() + "/data/missions/templates";
+	QDir().mkpath(templatesDir);
+
+	QString templateName = QFileDialog::getSaveFileName(this,
+		tr("Save As Template"),
+		templatesDir,
+		tr("FS2 mission templates (*.fst)"));
+
+	if (templateName.isEmpty())
+		return;
+
+	if (!templateName.endsWith(".fst", Qt::CaseInsensitive))
+		templateName += ".fst";
+
+	Fred_mission_save save;
+	save.set_always_save_display_names(_viewport->Always_save_display_names);
+	save.set_fred_alt_names(Fred_alt_names);
+	save.set_fred_callsigns(Fred_callsigns);
+	save.set_template_info(metaDialog.templateInfo());
+
+	save.save_template_file(templateName.replace('/', DIR_SEPARATOR_CHAR).toUtf8().constData());
+}
+
+void FredView::loadTemplate() {
+	QString templatesDir = QDir::currentPath() + "/data/missions/templates";
+	QDir().mkpath(templatesDir);
+
+	dialogs::TemplateBrowserDialog browser(this, templatesDir);
+	if (browser.exec() != QDialog::Accepted)
+		return;
+
+	QString templateName = browser.selectedTemplatePath();
+	if (templateName.isEmpty())
+		return;
+
+	auto result = QMessageBox::question(this,
+		tr("Load Template"),
+		tr("This will replace all mission data. Continue?"),
+		QMessageBox::Yes | QMessageBox::No,
+		QMessageBox::No);
+
+	if (result != QMessageBox::Yes)
+		return;
+
+	loadMissionFile(templateName.replace('/', DIR_SEPARATOR_CHAR), MPF_IS_TEMPLATE);
+}
+
+void FredView::on_actionLoad_Template_triggered(bool) {
+	loadTemplate();
+}
+
+void FredView::on_actionSave_As_Template_triggered(bool) {
+	saveAsTemplate();
 }
 
 void FredView::on_mission_loaded(const std::string& filepath) {
+	// Clear browsed head ANIs so the new mission's message scan starts fresh.
+	fso::fred::dialogs::MissionEventsDialogModel::clearBrowsedHeadAnis();
+
+	if (_viewport != nullptr) {
+		_viewport->reloadLayersFromMission();
+	}
+
 	QString filename = "Untitled";
 	if (!filepath.empty()) {
 		filename = QFileInfo(QString::fromStdString(filepath)).fileName();
@@ -220,15 +367,25 @@ void FredView::on_mission_loaded(const std::string& filepath) {
 	if (!filepath.empty()) {
 		addToRecentFiles(QString::fromStdString(filepath));
 	}
+
+	_missionModified = false;
 }
 
 QSurface* FredView::getRenderSurface() {
 	return ui->centralWidget->getRenderSurface();
 }
 void FredView::newMission() {
+	if (!maybePromptToSaveMissionChanges(tr("creating a new mission"))) {
+		return;
+	}
+
 	fred->createNewMission();
 }
 void FredView::addToRecentFiles(const QString& path) {
+	// Templates are not mission files; don't pollute the recent list with them
+	if (path.endsWith(".fst", Qt::CaseInsensitive))
+		return;
+
 	// First get the list of existing files
 	QSettings settings;
 	auto recentFiles = settings.value("FredView/recentFiles").toStringList();
@@ -328,6 +485,8 @@ void FredView::initializeStatusBar() {
 
 	_statusBarUnitsLabel = new QLabel();
 	statusBar()->addPermanentWidget(_statusBarUnitsLabel);
+
+	statusBar()->showMessage(tr("Every great mission starts here. No pressure."));
 }
 void FredView::updateUI() {
 	if (!_viewport) {
@@ -336,6 +495,7 @@ void FredView::updateUI() {
 	}
 
 	_statusBarUnitsLabel->setText(tr("Units = %1 Meters").arg(_viewport->The_grid->square_size));
+	setWindowModified(isMissionModified());
 
 	if (_viewport->viewpoint == 1) {
 		_statusBarViewmode->setText(tr("Viewpoint: %1").arg(object_name(_viewport->view_obj)));
@@ -344,6 +504,52 @@ void FredView::updateUI() {
 	}
 
 	viewIdle();
+	ensureViewportFocus();
+}
+void FredView::ensureViewportFocus() {
+	if (QApplication::activeWindow() != this || QApplication::activeModalWidget() != nullptr) {
+		return;
+	}
+
+	auto* focusedWidget = QApplication::focusWidget();
+	if (focusedWidget != nullptr) {
+		auto* focusedWindow = focusedWidget->window();
+		if (focusedWindow != nullptr && focusedWindow != this) {
+			return;
+		}
+	}
+
+	if (focusedWidget != ui->centralWidget) {
+		ui->centralWidget->setFocus(Qt::OtherFocusReason);
+	}
+}
+bool FredView::isMissionModified() const {
+	return _missionModified;
+}
+
+bool FredView::maybePromptToSaveMissionChanges(const QString& actionDescription) {
+	if (!isMissionModified()) {
+		return true;
+	}
+
+	QMessageBox confirmationDialog(this);
+	confirmationDialog.setIcon(QMessageBox::Warning);
+	confirmationDialog.setWindowTitle(tr("Unsaved Changes"));
+	confirmationDialog.setText(tr("The current mission has unsaved changes."));
+	confirmationDialog.setInformativeText(tr("Do you want to save your changes before %1?").arg(actionDescription));
+	confirmationDialog.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+	confirmationDialog.setDefaultButton(QMessageBox::Save);
+	confirmationDialog.setEscapeButton(QMessageBox::Cancel);
+
+	switch (confirmationDialog.exec()) {
+	case QMessageBox::Save:
+		return saveMissionToCurrentPath();
+	case QMessageBox::Discard:
+		return true;
+	case QMessageBox::Cancel:
+	default:
+		return false;
+	}
 }
 void FredView::connectActionToViewSetting(QAction* option, bool* destination) {
 	Q_ASSERT(option->isCheckable());
@@ -388,6 +594,12 @@ void FredView::showContextMenu(const QPoint& globalPos) {
 	auto obj = _viewport->select_object(localPos.x(), localPos.y());
 	if (obj >= 0) {
 		fred->selectObject(obj);
+		const auto objType = Objects[obj].type;
+		const bool canAssignLayer = (objType == OBJ_SHIP) || (objType == OBJ_START) || (objType == OBJ_PROP);
+		_moveToLayerMenu->menuAction()->setVisible(canAssignLayer);
+		if (canAssignLayer) {
+			populateMoveToLayerMenu(obj);
+		}
 
 		// There is an object under the cursor
 		SCP_string objName;
@@ -430,6 +642,9 @@ void FredView::initializePopupMenus() {
 	_viewPopup->addMenu(_controlModeMenu);
 	_viewPopup->addMenu(ui->menuViewpoint);
 	_viewPopup->addSeparator();
+	auto* manageLayersViewAction = new QAction(tr("Manage Layers..."), _viewPopup);
+	connect(manageLayersViewAction, &QAction::triggered, this, [this]() { openLayerManagerDialog(); });
+	_viewPopup->addAction(manageLayersViewAction);
 
 	// Begin construction edit popup
 	_editPopup = new QMenu(this);
@@ -444,6 +659,47 @@ void FredView::initializePopupMenus() {
 
 	_editWingAction = new QAction(tr("Edit Wing"), _editPopup);
 	_editPopup->addAction(_editWingAction);
+	_editPopup->addSeparator();
+	_moveToLayerMenu = new QMenu(tr("Move to Layer"), _editPopup);
+	_editPopup->addMenu(_moveToLayerMenu);
+}
+
+void FredView::populateMoveToLayerMenu(int targetObject) {
+	_moveToLayerMenu->clear();
+
+	const auto layerNames = _viewport->getLayerNames();
+	for (const auto& layerName : layerNames) {
+		bool visible = true;
+		_viewport->getLayerVisibility(layerName, &visible);
+
+		auto* layerAction = new QAction(QString::fromStdString(layerName), _moveToLayerMenu);
+		layerAction->setCheckable(true);
+		layerAction->setChecked(_viewport->getObjectLayerName(targetObject) == layerName);
+		layerAction->setEnabled(visible);
+
+		connect(layerAction, &QAction::triggered, this, [this, layerName, targetObject]() {
+			SCP_string error;
+			if (Objects[targetObject].flags[Object::Object_Flags::Marked] && fred->getNumMarked() > 1) {
+				_viewport->moveMarkedObjectsToLayer(layerName, &error);
+			} else {
+				_viewport->moveObjectToLayer(targetObject, layerName, &error);
+			}
+
+				if (!error.empty()) {
+					showButtonDialog(DialogType::Error, "Layer Error", error, { DialogButton::Ok });
+				}
+			});
+		_moveToLayerMenu->addAction(layerAction);
+	}
+
+	_moveToLayerMenu->addSeparator();
+	auto* manageAction = _moveToLayerMenu->addAction(tr("Manage Layers..."));
+	connect(manageAction, &QAction::triggered, this, [this]() { openLayerManagerDialog(); });
+}
+
+void FredView::openLayerManagerDialog() {
+	dialogs::LayerManagerDialog dialog(_viewport, this);
+	dialog.exec();
 }
 
 void FredView::onUpdateConstrains() {
@@ -529,6 +785,14 @@ void FredView::onUpdateEditingMode() {
 }
 bool FredView::event(QEvent* event) {
 	switch (event->type()) {
+	case QEvent::ShortcutOverride: {
+		auto* keyEvent = static_cast<QKeyEvent*>(event);
+		if (ControlBindings::instance().matches(keyEvent)) {
+			event->accept();
+			return true;
+		}
+		return QMainWindow::event(event);
+	}
 	case QEvent::WindowActivate:
 		windowActivated();
 		return true;
@@ -539,19 +803,32 @@ bool FredView::event(QEvent* event) {
 		return QMainWindow::event(event);
 	}
 }
-void FredView::windowActivated() {
-	key_got_focus();
+void FredView::changeEvent(QEvent* event) {
+	QMainWindow::changeEvent(event);
+	// Force menubar repaint when reenabled after a modal dialog closes.
+	// Without this, menu items stay grey until the user mouses over them.
+	if (event->type() == QEvent::EnabledChange && isEnabled()) {
+		menuBar()->update();
+	}
+}
+void FredView::closeEvent(QCloseEvent* event) {
+	if (!maybePromptToSaveMissionChanges(tr("closing QtFRED"))) {
+		event->ignore();
+		return;
+	}
 
+	QMainWindow::closeEvent(event);
+}
+void FredView::windowActivated() {
 	_viewport->Cursor_over = -1;
 
 	// Track the last active viewport
 	fred->setActiveViewport(_viewport);
 
+	menuBar()->update();
 	viewWindowActivated();
 }
 void FredView::windowDeactivated() {
-	key_lost_focus();
-
 	_viewport->Cursor_over = -1;
 }
 void FredView::on_actionHide_Marked_Objects_triggered(bool  /*enabled*/) {
@@ -733,8 +1010,19 @@ void FredView::onUpdateSelectionLock() {
 void FredView::onUpdateShipClassBox() {
 	_shipClassBox->selectShipClass(_viewport->cur_model_index);
 }
+void FredView::onUpdatePropClassBox() {
+	if (_propClassBox) {
+		if (_viewport->cur_prop_index < 0 && _propClassBox->count() > 0) {
+			onPropClassSelected(_propClassBox->itemData(0).value<int>());
+		}
+		_propClassBox->selectPropClass(_viewport->cur_prop_index);
+	}
+}
 void FredView::onShipClassSelected(int ship_class) {
 	_viewport->cur_model_index = ship_class;
+}
+void FredView::onPropClassSelected(int prop_class) {
+	_viewport->cur_prop_index = prop_class;
 }
 void FredView::on_actionAsteroid_Field_triggered(bool) {
 	auto asteroidFieldEditor = new dialogs::AsteroidEditorDialog(this, _viewport);
@@ -795,6 +1083,18 @@ void FredView::on_actionWings_triggered(bool)
 	} else {
 		_wingEditorDialog->raise();
 		_wingEditorDialog->activateWindow();
+	}
+}
+void FredView::on_actionProps_triggered(bool)
+{
+	if (!_propEditorDialog) {
+		_propEditorDialog = new dialogs::PropEditorDialog(this, _viewport);
+		_propEditorDialog->setAttribute(Qt::WA_DeleteOnClose);
+		connect(_propEditorDialog, &QObject::destroyed, this, [this]() { _propEditorDialog = nullptr; });
+		_propEditorDialog->show();
+	} else {
+		_propEditorDialog->raise();
+		_propEditorDialog->activateWindow();
 	}
 }
 void FredView::on_actionCampaign_triggered(bool) {
@@ -903,9 +1203,15 @@ void FredView::handleObjectEditor(int objNum) {
 	} else {
 		Assertion(objNum >= 0, "Popup object is not valid when editObjectTriggered was called!");
 
-		if ((Objects[objNum].type == OBJ_START) || (Objects[objNum].type == OBJ_SHIP)) {
-			on_actionShips_triggered(false);
-		} else if (Objects[objNum].type == OBJ_JUMP_NODE || Objects[objNum].type == OBJ_WAYPOINT) {
+			if ((Objects[objNum].type == OBJ_START) || (Objects[objNum].type == OBJ_SHIP)) {
+				on_actionShips_triggered(false);
+			} else if (Objects[objNum].type == OBJ_PROP) {
+
+				// Select the object before displaying the dialog
+				fred->selectObject(objNum);
+
+				on_actionProps_triggered(false);
+			} else if (Objects[objNum].type == OBJ_JUMP_NODE || Objects[objNum].type == OBJ_WAYPOINT) {
 
 			// Select the object before displaying the dialog
 			fred->selectObject(objNum);
@@ -1189,20 +1495,16 @@ void FredView::on_actionPrev_Subsystem_triggered(bool) {
 void FredView::on_actionCancel_Subsystem_triggered(bool) {
 	fred->cancel_select_subsystem();
 }
-void FredView::on_actionMove_Ships_When_Undocking_triggered(bool) {
-	_viewport->Move_ships_when_undocking = !_viewport->Move_ships_when_undocking;
-}
-void FredView::on_actionAlways_Save_Display_Names_triggered(bool) {
-	_viewport->Always_save_display_names = !_viewport->Always_save_display_names;
-}
-void FredView::on_actionError_Checker_Checks_Potential_Issues_triggered(bool) {
-	_viewport->Error_checker_checks_potential_issues = !_viewport->Error_checker_checks_potential_issues;
-}
 void FredView::on_actionError_Checker_triggered(bool) {
 	fred->global_error_check();
 }
 void FredView::on_actionAbout_triggered(bool) {
-	auto dialog = new dialogs::AboutDialog(this);
+	auto dialog = new dialogs::AboutDialog(this, _viewport);
+	dialog->setAttribute(Qt::WA_DeleteOnClose);
+	dialog->show();
+}
+void FredView::on_actionMission_Statistics_triggered(bool) {
+	auto dialog = new dialogs::MissionStatsDialog(this, _viewport);
 	dialog->setAttribute(Qt::WA_DeleteOnClose);
 	dialog->show();
 }

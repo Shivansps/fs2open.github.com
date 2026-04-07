@@ -19,6 +19,7 @@
 
 class ship_subsys;
 class ship;
+struct prop;
 class waypoint_list;
 class object;
 class waypoint;
@@ -38,6 +39,7 @@ enum sexp_opf_t : int {
 	OPF_BOOL,
 	OPF_NUMBER,
 	OPF_SHIP,
+	OPF_PROP,
 	OPF_WING,
 	OPF_SUBSYSTEM,
 	OPF_POINT,						// either a 3d point in space, or a waypoint name
@@ -54,6 +56,7 @@ enum sexp_opf_t : int {
 	OPF_SHIP_POINT,					// a waypoint or a ship
 	OPF_GOAL_NAME,					// name of goal (or maybe event?) from a mission
 	OPF_SHIP_WING,					// either a ship or wing name (they don't conflict)
+	OPF_SHIP_PROP,                  // either a ship or a prop
 	OPF_SHIP_WING_WHOLETEAM,		// Karajorma - Ship, wing or an entire team's worth of ships
 	OPF_SHIP_WING_SHIPONTEAM_POINT,	// name of a ship, wing, any ship on a team, or a point
 	OPF_SHIP_WING_POINT,
@@ -66,6 +69,7 @@ enum sexp_opf_t : int {
 	OPF_MEDAL_NAME,					// name of medals
 	OPF_WEAPON_NAME,				// name of a weapon
 	OPF_SHIP_CLASS_NAME,			// name of a ship class
+	OPF_PROP_CLASS_NAME,            // name of a prop class
 	OPF_CUSTOM_HUD_GAUGE,			// name of custom HUD gauge
 	OPF_HUGE_WEAPON,				// name of a secondary bomb type weapon
 	OPF_SHIP_NOT_PLAYER,			// a ship, but not a player ship
@@ -594,6 +598,7 @@ enum : int {
 	OP_CARGO_NO_DEPLETE,
 	OP_SET_SPECIAL_WARPOUT_NAME,
 	OP_SHIP_VANISH,
+	OP_PROP_VANISH, // MjnMixael
 	OP_SHIELDS_ON,	//-Sesquipedalian
 	OP_SHIELDS_OFF,	//-Sesquipedalian
 	
@@ -692,6 +697,7 @@ enum : int {
 	OP_SHIP_SUBSYS_GUARDIAN_THRESHOLD,	// Goober5000
 	OP_SET_SKYBOX_MODEL, // taylor
 	OP_SHIP_CREATE,
+	OP_PROP_CREATE,     // MjnMixael
 	OP_WEAPON_CREATE,	// Goober5000
 	OP_SET_OBJECT_SPEED_X, // Deprecated by wookieejedi
 	OP_SET_OBJECT_SPEED_Y, // Deprecated by wookieejedi
@@ -1102,7 +1108,7 @@ enum class sexp_mode
 #define SEXP_ATOM				2
 
 // flags for sexpressions -- masked onto the end of the type field
-#define SEXP_FLAG_PERSISTENT				(1<<31)		// should this sexp node be persistant across missions
+#define SEXP_FLAG_PERSISTENT				(1<<31)		// should this sexp node be kept across missions, i.e. not freed -- note, NOT the same as variable/container persistence
 #define SEXP_FLAG_VARIABLE					(1<<30)
 
 // sexp variable definitions
@@ -1126,6 +1132,18 @@ enum class sexp_mode
 #define SEXP_VARIABLE_NETWORK				(1<<28)
 #define SEXP_VARIABLE_SAVE_TO_PLAYER_FILE	(1<<27)
 
+// There are three types of persistence for variables and containers:
+// 1. No persistence: the value is only kept for the duration of a mission's gameplay
+// 2. Campaign-persistence: the value is scoped to a campaign, and has no value outside the campaign
+// 3. Player-persistence: the value is scoped to the player/pilot file, and can be referenced in any campaign
+// And there are two ways that persistent variables/containers are saved:
+// 1. When the mission progresses with an outcome that is "accepted" by the player
+// 2. When the mission closes in any way (progress, quit, restart)
+// So, there can be four combinations of persistence (campaign/player times progress/close).  When persistent variables
+// were first implemented, there was an assumption that player-persistence implied save-on-close, and that
+// campaign-persistence implied save-on-progress, and the original mission parsing code reflects that.  But after the
+// 2018 rework, either type can be used with either save.  The 2018 rework also introduced new terminology:
+// "eternal" means player-persistent, and "non-eternal" means campaign-persistent.
 #define SEXP_VARIABLE_IS_PERSISTENT (SEXP_VARIABLE_SAVE_ON_MISSION_PROGRESS|SEXP_VARIABLE_SAVE_ON_MISSION_CLOSE)
 
 #define BLOCK_EXP_SIZE					6
@@ -1186,12 +1204,14 @@ enum sexp_error_check
 
 	SEXP_CHECK_INVALID_NUM = 101,       // number is not valid
 	SEXP_CHECK_INVALID_SHIP,            // invalid ship name
+	SEXP_CHECK_INVALID_PROP,            // invalid prop name
 	SEXP_CHECK_INVALID_WING,            // invalid wing name
 	SEXP_CHECK_INVALID_SUBSYS,          // invalid subsystem
 	SEXP_CHECK_INVALID_IFF,             // invalid iff string
 	SEXP_CHECK_INVALID_POINT,           // invalid point
 	SEXP_CHECK_NEGATIVE_NUM,            // negative number wasn't allowed
 	SEXP_CHECK_INVALID_SHIP_WING,       // invalid ship/wing
+	SEXP_CHECK_INVALID_SHIP_PROP,       // invalid ship/prop
 	SEXP_CHECK_INVALID_SHIP_TYPE,       // invalid ship type
 	SEXP_CHECK_UNKNOWN_MESSAGE,         // invalid message
 	SEXP_CHECK_INVALID_PRIORITY,        // invalid priority for a message
@@ -1477,8 +1497,9 @@ struct ship_registry_entry;
 struct wing;
 
 // Goober5000 - stuff with caching
-// (included in the header file because Lua uses the first three)
+// (included in the header file because Lua uses the first four)
 extern const ship_registry_entry *eval_ship(int node);
+extern const prop* eval_prop(int node);
 extern wing *eval_wing(int node);
 extern int sexp_get_variable_index(int node);
 extern int sexp_atoi(int node);
@@ -1508,7 +1529,6 @@ bool sexp_replace_variable_names_with_values(char *text, int max_len);	// Goober
 bool sexp_replace_variable_names_with_values(SCP_string &text);	// Goober5000
 int get_nth_variable_index(int nth, int variable_type);	// Karajorma
 int sexp_variable_count();
-int sexp_campaign_file_variable_count();	// Goober5000
 int sexp_variable_typed_count(int sexp_variables_index, int variable_type); // Karajorma
 void sexp_variable_delete(int index);
 void sexp_variable_sort();

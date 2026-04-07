@@ -45,6 +45,7 @@ int Failed_key_index;
 // Joystick configuration
 int Joy_dead_zone_size = 10;
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto DeadZoneOption = options::OptionBuilder<int>("Input.JoystickDeadZone",
                      std::pair<const char*, int>{"Deadzone", 1377},
                      std::pair<const char*, int>{"The deadzone used for all joysticks", 1744})
@@ -59,6 +60,7 @@ auto DeadZoneOption = options::OptionBuilder<int>("Input.JoystickDeadZone",
 
 int Joy_sensitivity = 9;
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto SensitivityOption = options::OptionBuilder<int>("Input.JoystickSensitivity",
                      std::pair<const char*, int>{"Sensitivity", 1745},
                      std::pair<const char*, int>{"The sensitivity used for all joysticks", 1746})

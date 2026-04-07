@@ -165,6 +165,7 @@
 #include "playerman/player.h"
 #include "popup/popup.h"
 #include "popup/popupdead.h"
+#include "prop/prop.h"
 #include "radar/radar.h"
 #include "radar/radarsetup.h"
 #include "render/3d.h"
@@ -272,6 +273,7 @@ static void parse_skill_func()
 	Game_skill_level = value;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto GameSkillOption __UNUSED = options::OptionBuilder<int>("Game.SkillLevel",
                      std::pair<const char*, int>{"Skill Level", 1284},
                      std::pair<const char*, int>{"The skill level for the game.", 1700})
@@ -295,6 +297,7 @@ static void parse_screenshake_func()
 	Screenshake_enabled = enabled;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto ScreenShakeOption = options::OptionBuilder<bool>("Graphics.ScreenShake",
                      std::pair<const char*, int>{"Screen Shudder Effect", 1812}, // do xstr
                      std::pair<const char*, int>{"Toggles the screen shake effect for weapons, afterburners, and shockwaves", 1813})
@@ -317,6 +320,7 @@ static void parse_unfocused_pause_func()
 	Allow_unfocused_pause = enabled;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto UnfocusedPauseOption = options::OptionBuilder<bool>("Game.UnfocusedPause",
                      std::pair<const char*, int>{"Pause If Unfocused", 1814}, // do xstr
                      std::pair<const char*, int>{"Whether or not the game automatically pauses if it loses focus", 1815})
@@ -915,9 +919,9 @@ void game_level_close()
 	//to accidentally use an override here without realizing it.
 	if (!scripting::hooks::OnMissionEndHook->isActive() || !scripting::hooks::OnMissionEndHook->isOverride())
 	{
-		// save player-persistent variables and containers
-		mission_campaign_save_on_close_variables();	// Goober5000
-		mission_campaign_save_on_close_containers(); // jg18
+		// save on-close variables and containers
+		mission_campaign_store_variables(SEXP_VARIABLE_SAVE_ON_MISSION_CLOSE, false);	// Goober5000
+		mission_campaign_store_containers(ContainerType::SAVE_ON_MISSION_CLOSE, false);	// jg18
 
 		// De-Initialize the game subsystems
 		obj_delete_all();
@@ -934,6 +938,7 @@ void game_level_close()
 		shockwave_level_close();
 		fireball_close();	
 		shield_hit_close();
+		props_level_close();
 		asteroid_level_close();
 		jumpnode_level_close();
 		waypoint_level_close();
@@ -1035,6 +1040,10 @@ void game_level_init()
 	CheatUsed = "";
 
 	Game_shudder_time = TIMESTAMP::invalid();
+	Game_shudder_perpetual = false;
+	Game_shudder_everywhere = false;
+	Game_shudder_total = 0;
+	Game_shudder_intensity = 0.0f;
 
 	Perspective_locked = false;
 	Slew_locked = false;
@@ -1063,6 +1072,7 @@ void game_level_init()
 	NavSystem_Init();				// zero out the nav system
 
 	ai_level_init();				//	Call this before ship_init() because it reads ai.tbl.
+	props_level_init();
 	multi_init_oo_and_ship_tracker();	// Inits/resets multiplayer ship tracking system.  Has to be done before creating any ships.
 	ship_level_init();
 	player_level_init();
@@ -1423,6 +1433,11 @@ void game_post_level_init()
 #endif
 
 	training_mission_init();
+
+	// the asteroids enabled variable can be set via sexp 
+	// so ensure it is resets to the default value before creating asteroids 
+	// --wookieejedi
+	Asteroids_enabled = 1;
 	asteroid_create_all();
 
 	// set ambient light for level
@@ -2018,6 +2033,7 @@ void game_init()
 	weapon_init();
 	glowpoint_init();
 	ship_init();						// read in ships.tbl	
+	prop_init();
 
 	player_init();	
 	mission_campaign_init();		// load in the default campaign	
@@ -3510,11 +3526,18 @@ void game_render_frame( camid cid, const vec3d* offset, const matrix* rot_offset
 	shadows_render_all(Proj_fov, &Eye_matrix, &Eye_position);
 	obj_render_queue_all();
 
+	// render all ships with shader effects on them
+	auto obji = effect_ships.begin();
+	for(;obji != effect_ships.end();++obji)
+	{
+		obj_render(*obji);
+	}
+	effect_ships.clear();
+
 	render_shields();
 
 	if (!Trail_render_override) trail_render_all();						// render missilie trails after everything else.
 	particle::render_all();					// render particles after everything else.
-	
 
 	beam_render_all();						// render all beam weapons
 
@@ -3528,13 +3551,6 @@ void game_render_frame( camid cid, const vec3d* offset, const matrix* rot_offset
 
 	gr_copy_effect_texture();
 
-	// render all ships with shader effects on them
-	SCP_vector<object*>::iterator obji = effect_ships.begin();
-	for(;obji != effect_ships.end();++obji)
-	{
-		obj_render(*obji);
-	}
-	effect_ships.clear();
 
 	// render distortions after the effect framebuffer is copied.
 	batching_render_all(true);
@@ -4764,7 +4780,7 @@ int game_poll()
 				}
 
 				mprintf(( "Dumping screen to '%s'\n", tmp_name ));
-				gr_print_screen(tmp_name);
+				gr_request_screenshot(tmp_name);
 
 				os_config_write_uint(nullptr, "ScreenshotNum", counter);
 			}
@@ -5686,7 +5702,7 @@ void game_leave_state( int old_state, int new_state )
 			break;
 
 		case GS_STATE_LAB:
-			lab_close();
+			lab_close(new_state != GS_STATE_OPTIONS_MENU);
 			// restore default cursor and enable it --wookieejedi
 			if (!Is_standalone) {
 				io::mouse::Cursor* cursor = io::mouse::CursorManager::get()->loadCursor("cursor", true);
@@ -6277,6 +6293,10 @@ void mouse_force_pos(int x, int y);
 			break;		
 
 		case GS_STATE_LOOP_BRIEF:
+			if (old_state == GS_STATE_MAIN_MENU) {
+				main_hall_stop_music(true);
+				main_hall_stop_ambient();
+			}
 			loop_brief_init();
 			break;
 
@@ -7540,7 +7560,7 @@ int detect_lang()
 
 	// try and open the file to verify
 	font::stuff_first(first_font);
-	CFILE *detect = cfopen(const_cast<char*>(first_font.c_str()), "rb");
+	CFILE *detect = cfopen(first_font.c_str(), "rb");
 
 	// will use default setting if something went wrong
 	if (!detect)

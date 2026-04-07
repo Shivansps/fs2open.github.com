@@ -70,6 +70,7 @@ static void parse_effect_volume_func()
 	Default_sound_volume = volume;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto EffectVolumeOption __UNUSED = options::OptionBuilder<float>("Audio.Effects",
                      std::pair<const char*, int>{"Effects", 1370},
                      std::pair<const char*, int>{"Volume used for playing in-game effects", 1734})
@@ -102,6 +103,7 @@ static void parse_voice_volume_func()
 	Default_voice_volume = volume;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto VoiceVolumeOption __UNUSED = options::OptionBuilder<float>("Audio.Voice",
                      std::pair<const char*, int>{"Voice", 1372},
                      std::pair<const char*, int>{"Volume used for playing voice audio", 1735})

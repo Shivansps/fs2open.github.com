@@ -1030,9 +1030,9 @@ int debris_check_collision(object *pdebris, object *other_obj, vec3d *hitpos, co
 				model_get_moving_submodel_list(submodel_vector, heavy_obj);
 
 				// turn off all moving submodels, collide against only 1 at a time.
-				// turn off collision detection for all moving submodels
+				mc.collision_checked.assign(pm->n_models, 0);
 				for (auto submodel : submodel_vector) {
-					pmi->submodel[submodel].collision_checked = true;
+					mc.collision_checked[submodel] = true;
 				}
 
 				// Only check single submodel now, since children of moving submodels are handled as moving as well
@@ -1044,10 +1044,8 @@ int debris_check_collision(object *pdebris, object *other_obj, vec3d *hitpos, co
 
 				// check each submodel in turn
 				for (auto submodel: submodel_vector) {
-					auto smi = &pmi->submodel[submodel];
-
 					// turn on just one submodel for collision test
-					smi->collision_checked = false;
+					mc.collision_checked[submodel] = false;
 
 					// find the start and end positions of the sphere in submodel RF
 					model_instance_global_to_local_point(&p0, &light_obj->last_pos, pm, pmi, submodel, &heavy_obj->last_orient, &heavy_obj->last_pos, true);
@@ -1081,8 +1079,11 @@ int debris_check_collision(object *pdebris, object *other_obj, vec3d *hitpos, co
 					}
 
 					// Don't look at this submodel again
-					smi->collision_checked = true;
+					mc.collision_checked[submodel] = true;
 				}
+
+				// Clear collision_checked before base model pass so it auto-inits fresh
+				mc.collision_checked.clear();
 			}
 
 			// Now complete base model collision checks that do not take into account rotating submodels.
@@ -1305,14 +1306,21 @@ void create_generic_debris(object* ship_objp, const vec3d* pos, float min_num_de
 	if (ship_objp->type != OBJ_SHIP)
 		return;
 
+	// determine if using custom or non-custom generic debris
+	int model_num = use_ship_debris ? Ship_info[Ships[ship_objp->instance].ship_info_index].generic_debris_model_num : -1;
+
+	// if using non-custom generic debris, then bail early if that kind of debris is not allowed --wookeejedi
+	if ( (model_num < 0) && (Disable_all_noncustom_generic_debris) ) {
+		return;
+	}
+
 	float num_debris = frand_range(min_num_debris, max_num_debris);
 
 	num_debris *= (Detail.num_small_debris + 0.5f) / 4.5f;
 
 	vec3d create_pos = *pos;
 	for (int i = 0; i < num_debris; i++) {
-		int model_num = use_ship_debris ? Ship_info[Ships[ship_objp->instance].ship_info_index].generic_debris_model_num : -1;
-		debris_create(ship_objp, model_num, -1, &create_pos, pos, 0, speed_mult);
+		debris_create(ship_objp, model_num, -1, &create_pos, pos, false, speed_mult);
 	}
 }
 

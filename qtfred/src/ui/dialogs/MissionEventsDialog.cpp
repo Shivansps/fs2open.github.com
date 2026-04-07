@@ -1,7 +1,7 @@
 #include "MissionEventsDialog.h"
 #include "ui_MissionEventsDialog.h"
 #include "ui/util/SignalBlockers.h"
-#include "ui/dialogs/General/ImagePickerDialog.h"
+#include "ui/dialogs/EventEditor/HeadAnimationPickerDialog.h"
 
 #include "mission/util.h"
 
@@ -23,6 +23,9 @@ MissionEventsDialog::MissionEventsDialog(QWidget* parent, EditorViewport* viewpo
 	  ui(new Ui::MissionEventsDialog()), _viewport(viewport)
 {
 	ui->setupUi(this);
+
+	ui->editDirectiveText->setMaxLength(NAME_LENGTH - 1);
+	ui->editDirectiveKeypressText->setMaxLength(NAME_LENGTH - 1);
 
 	// Build the Qt adapter for our data model
 	// This is kinda messy but the sexp_tree widget owns both the ui and the data for the tree
@@ -212,6 +215,9 @@ void MissionEventsDialog::initEventWidgets() {
 	ui->miniHelpBox->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 	ui->helpBox->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
+	ui->miniHelpBox->setVisible(_viewport->Show_sexp_help_mission_events);
+	ui->helpBox->setVisible(_viewport->Show_sexp_help_mission_events);
+
 	// connect the sexp tree stuff
 	connect(ui->eventTree, &sexp_tree::modified, this, [this]() { _model->setModified(); });
 	connect(ui->eventTree, &sexp_tree::rootNodeDeleted, this, &MissionEventsDialog::rootNodeDeleted);
@@ -252,7 +258,7 @@ void MissionEventsDialog::accept()
 	if (_model->apply()) {
 		QDialog::accept();
 	}
-	// else: validation failed, don’t close
+	// else: validation failed, don't close
 }
 
 void MissionEventsDialog::reject()
@@ -299,10 +305,12 @@ void MissionEventsDialog::initMessageWidgets() {
 	ui->messageName->setMaxLength(NAME_LENGTH - 1);
 
 	if (auto* le = ui->aniCombo->lineEdit()) {
+		le->setMaxLength(MAX_FILENAME_LEN - 1);
 		connect(le, &QLineEdit::editingFinished, this, &MissionEventsDialog::on_aniCombo_editingFinished);
 	}
 
 	if (auto* le = ui->waveCombo->lineEdit()) {
+		le->setMaxLength(MAX_FILENAME_LEN - 1);
 		connect(le, &QLineEdit::editingFinished, this, &MissionEventsDialog::on_waveCombo_editingFinished);
 	}
 
@@ -930,13 +938,29 @@ void MissionEventsDialog::on_aniCombo_selectedIndexChanged(int index)
 
 void MissionEventsDialog::on_btnAniBrowse_clicked()
 {
-	// TODO Build gallery from the model's known head ANIs
-	const QString filters =
-		"FSO Images (*.ani *.eff *.png);;All files (*.*)";
-	const QString file = QFileDialog::getOpenFileName(this, tr("Select Head Animation"), QString(), filters);
-	if (file.isEmpty())
+	HeadAnimationPickerDialog dlg(this);
+
+	QStringList headNames;
+	for (const auto& head : _model->getHeadAniList()) {
+		headNames << QString::fromStdString(head);
+	}
+	dlg.setHeadAnimationNames(headNames);
+	dlg.setInitialSelection(QString::fromStdString(_model->getMessageAni()));
+
+	if (dlg.exec() != QDialog::Accepted) {
 		return;
-	_model->setMessageAni(file.toUtf8().constData());
+	}
+
+	const auto selected = dlg.selectedFile();
+	const SCP_string selectedStd = selected.toUtf8().constData();
+
+	// Permanently add the picked name to the session gallery so it appears in
+	// the picker whenever this mission editor is open
+	MissionEventsDialogModel::addExtraHeadAni(selectedStd);
+
+	_model->setMessageAni(selectedStd);
+	initHeadCombo();
+	ui->aniCombo->setCurrentText(selected);
 }
 
 void MissionEventsDialog::on_waveCombo_editingFinished()

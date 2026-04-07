@@ -33,6 +33,7 @@
 #include "object/objectsnd.h"
 #include "parse/parselo.h"
 #include "playerman/player.h"
+#include "prop/prop.h"
 #include "render/3d.h" // needed for View_position, which is used when playing a 3D sound
 #include "render/batching.h"
 #include "scripting/hook_api.h"
@@ -221,7 +222,7 @@ static void shipfx_subsystem_maybe_create_live_debris(object *ship_objp, const s
 static void shipfx_maybe_create_live_debris_at_ship_death( object *ship_objp )
 {
 	// if ship has live debris, detonate that subsystem now
-	// search for any live debris
+	// search for any submodels which have live debris
 
 	ship *shipp = &Ships[ship_objp->instance];
 	polymodel *pm = model_get(Ship_info[shipp->ship_info_index].model_num);
@@ -232,41 +233,25 @@ static void shipfx_maybe_create_live_debris_at_ship_death( object *ship_objp )
 		return;
 	}
 
-	int live_debris_submodel = -1;
-	for (int idx=0; idx<pm->num_debris_objects; idx++) {
-		if (pm->submodel[pm->debris_objects[idx]].flags[Model::Submodel_flags::Is_live_debris]) {
-			live_debris_submodel = pm->debris_objects[idx];
+	for (auto pss: list_range(&shipp->subsys_list)) {
+		if (pss->system_info != nullptr) {
+			int submodel_num = pss->system_info->subobj_num;
 
-			// get submodel that produces live debris
-			int model_get_parent_submodel_for_live_debris( int model_num, int live_debris_model_num );
-			int parent = model_get_parent_submodel_for_live_debris(pm->id, live_debris_submodel);
-			Assert(parent != -1);
+			// Subsystems without a valid submodel cannot produce live debris
+			if (submodel_num < 0 || submodel_num >= pm->n_models) {
+				continue;
+			}
 
-			// check if already blown off  (ship model set)
-			if ( !pmi->submodel[parent].blown_off ) {
-		
-				// get ship_subsys for live_debris
-				// Go through all subsystems and look for submodel the subsystems with "parent" submodel.
-				ship_subsys	*pss = NULL;
-				for ( pss = GET_FIRST(&shipp->subsys_list); pss != END_OF_LIST(&shipp->subsys_list); pss = GET_NEXT(pss) ) {
-					if (pss->system_info->subobj_num == parent) {
-						break;
-					}
-				}
+			// find the submodels which aren't already blown up and have live debris
+			if (!pmi->submodel[submodel_num].blown_off && pm->submodel[submodel_num].num_live_debris > 0) {
+				vec3d exp_center, tmp = ZERO_VECTOR;
+				model_instance_local_to_global_point(&exp_center, &tmp, pm, pmi, submodel_num, &ship_objp->orient, &ship_objp->pos);
+				
+				// create its debris
+				shipfx_subsystem_maybe_create_live_debris(ship_objp, shipp, pss, &exp_center, 3.0f);
 
-				Assert (pss != NULL);
-				if (pss != NULL) {
-					if (pss->system_info != NULL) {
-						vec3d exp_center, tmp = ZERO_VECTOR;
-						model_instance_local_to_global_point(&exp_center, &tmp, pm, pmi, parent, &ship_objp->orient, &ship_objp->pos );
-
-						// if not blown off, blow it off
-						shipfx_subsystem_maybe_create_live_debris(ship_objp, shipp, pss, &exp_center, 3.0f);
-
-						// now set subsystem as blown off, so we only get one copy
-						pmi->submodel[parent].blown_off = true;
-					}
-				}
+				// now set subsystem as blown off, so we only get one copy
+				pmi->submodel[submodel_num].blown_off = true;
 			}
 		}
 	}
@@ -285,10 +270,19 @@ void shipfx_blow_off_subsystem(object *ship_objp, ship *ship_p, const ship_subsy
 
 	// create debris shards
     if (!(subsys->flags[Ship::Subsystem_Flags::Vanished]) && !no_explosion) {
-		shipfx_blow_up_model(ship_objp, psub->subobj_num, 50, &subobj_pos, subsys );
+		// default debris shard creation is flag dependent --wookieejedi
+		int num_shards;
+		if (Disable_all_noncustom_generic_debris ||  
+			(Ship_info[ship_p->ship_info_index].flags[Ship::Info_Flags::Disable_all_generic_explosion_debris]) ||
+			(subsys->system_info->flags[Model::Subsystem_Flags::Disable_all_generic_explosion_debris])) {
+			num_shards = 0;
+		} else {
+			num_shards = 50;
+		}
+		shipfx_blow_up_model(ship_objp, psub->subobj_num, num_shards, &subobj_pos, subsys);
 
 		// create live debris objects, if any
-		// TODO:  some MULTIPLAYER implcations here!!
+		// TODO:  some MULTIPLAYER implications here!!
 		shipfx_subsystem_maybe_create_live_debris(ship_objp, ship_p, subsys, exp_center, 1.0f, no_fireballs);
 		
 		if (!no_fireballs) {
@@ -825,10 +819,34 @@ bool shipfx_eye_in_shadow( vec3d *eye_pos, object * src_obj, int light_n )
 			mc.pos = &objp->pos;
 			mc.p0 = &rp0;
 			mc.p1 = &rp1;
-			mc.flags = MC_CHECK_MODEL;	
+			mc.flags = MC_CHECK_MODEL | MC_RESPECT_DETAIL_BOX_SPHERE;
 
 			if (model_collide(&mc)) {
 				return true;
+			}
+		}
+	}
+
+	for (const auto& p : Props) {
+		if (p.has_value()) {
+			objp = &Objects[p->objnum];
+			if (objp->flags[Object::Object_Flags::Should_be_dead])
+				continue;
+
+			if (src_obj != objp) {
+				vm_vec_scale_add(&rp1, &rp0, &light_dir, objp->radius * 10.0f);
+
+				mc.model_instance_num = p->model_instance_num;
+				mc.model_num = Prop_info[p->prop_info_index].model_num;
+				mc.orient = &objp->orient;
+				mc.pos = &objp->pos;
+				mc.p0 = &rp0;
+				mc.p1 = &rp1;
+				mc.flags = MC_CHECK_MODEL;
+
+				if (model_collide(&mc)) {
+					return true;
+				}
 			}
 		}
 	}
@@ -878,7 +896,7 @@ bool shipfx_eye_in_shadow( vec3d *eye_pos, object * src_obj, int light_n )
 				mc.pos = &pos;
 				mc.p0 = &rp0;
 				mc.p1 = &rp1;
-				mc.flags = MC_CHECK_MODEL;
+				mc.flags = MC_CHECK_MODEL | MC_RESPECT_DETAIL_BOX_SPHERE;
 
 				int mc_result = model_collide(&mc);
 				mc.pos = NULL;
@@ -927,7 +945,7 @@ bool shipfx_eye_in_shadow( vec3d *eye_pos, object * src_obj, int light_n )
 				mc.pos = &Viewer_obj->pos;
 				mc.p0 = &rp0;
 				mc.p1 = &rp1;
-				mc.flags = MC_CHECK_MODEL;
+				mc.flags = MC_CHECK_MODEL | MC_RESPECT_DETAIL_BOX_SPHERE;
 
 				if( model_collide(&mc) ) {
 					if ( mc.t_poly ) {
@@ -2861,7 +2879,7 @@ public:
 	int getInt(int *output);
 	//Returns handle, or < 0 on failure/wrong type
 	gamesnd_id getSound();
-	//Returns 1 if buffer was successfully written to
+	//Returns 1 if buffer was successfully written to (output_max includes the null terminator)
 	int getString(char *output, size_t output_max);
 
 	//Returns true if TYPE_NONE
@@ -3056,7 +3074,7 @@ void parse_combined_variable_list(CombinedVariable *dest, flag_def_list *src, si
 		sp = &src[i];
 		dp = &dest[i];
 
-		snprintf(buf, sizeof(buf)-1, "+%s:", sp->name);
+		snprintf(buf, sizeof(buf), "+%s:", sp->name);
 		if(optional_string(buf))
 		{
 			switch(sp->var)

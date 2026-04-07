@@ -23,7 +23,7 @@
 #include <QtWidgets/QMessageBox>
 
 #include "osapi/osapi.h"
-#include "io/key.h"
+#include "ui/ControlBindings.h"
 #include "io/timer.h"
 #include "starfield/starfield.h"
 
@@ -64,8 +64,12 @@ bool RenderWindow::event(QEvent* evt) {
 		auto mouseEvent = static_cast<QMouseEvent*>(evt);
 
 		if (mouseEvent->button() == Qt::RightButton) {
-			// Right button events may cause a context menu so we send that to our parent which will handle that
-			qGuiApp->sendEvent(parent(), evt);
+			// Let the render widget consume right clicks for drag-cancel behavior first.
+			qGuiApp->sendEvent(_renderWidget, evt);
+			if (!evt->isAccepted()) {
+				// Not consumed by the render widget, forward for context menu handling.
+				qGuiApp->sendEvent(parent(), evt);
+			}
 		} else {
 			// The rest will be handled by the render widget
 			qGuiApp->sendEvent(_renderWidget, evt);
@@ -74,6 +78,7 @@ bool RenderWindow::event(QEvent* evt) {
 	}
 	case QEvent::KeyPress:
 	case QEvent::KeyRelease:
+	case QEvent::ShortcutOverride:
 	case QEvent::MouseButtonDblClick:
 	case QEvent::MouseMove: {
 		// Redirect all the events to the render widget since we want to handle them in in the QtWidget related code
@@ -119,7 +124,7 @@ void RenderWindow::setEditor(Editor* editor, FredRenderer* renderer) {
 	connect(_renderer, &FredRenderer::scheduleUpdate, this, &QWindow::requestUpdate);
 }
 RenderWidget::RenderWidget(QWidget* parent) : QWidget(parent) {
-	setFocusPolicy(Qt::NoFocus);
+	setFocusPolicy(Qt::StrongFocus);
 	setMouseTracking(true);
 
 	_window = new RenderWindow(this);
@@ -131,23 +136,6 @@ RenderWidget::RenderWidget(QWidget* parent) : QWidget(parent) {
 
 	setLayout(layout);
 
-	qt2fsKeys[Qt::Key_Shift] = KEY_LSHIFT;
-	qt2fsKeys[Qt::Key_A] = KEY_A;
-	qt2fsKeys[Qt::Key_Z] = KEY_Z;
-	qt2fsKeys[Qt::Key_0 + Qt::KeypadModifier] = KEY_PAD0;
-	qt2fsKeys[Qt::Key_1 + Qt::KeypadModifier] = KEY_PAD1;
-	qt2fsKeys[Qt::Key_2 + Qt::KeypadModifier] = KEY_PAD2;
-	qt2fsKeys[Qt::Key_3 + Qt::KeypadModifier] = KEY_PAD3;
-	qt2fsKeys[Qt::Key_4 + Qt::KeypadModifier] = KEY_PAD4;
-	qt2fsKeys[Qt::Key_5 + Qt::KeypadModifier] = KEY_PAD5;
-	qt2fsKeys[Qt::Key_6 + Qt::KeypadModifier] = KEY_PAD6;
-	qt2fsKeys[Qt::Key_7 + Qt::KeypadModifier] = KEY_PAD7;
-	qt2fsKeys[Qt::Key_8 + Qt::KeypadModifier] = KEY_PAD8;
-	qt2fsKeys[Qt::Key_9 + Qt::KeypadModifier] = KEY_PAD9;
-	qt2fsKeys[Qt::Key_Plus + Qt::KeypadModifier] = KEY_PADPLUS;
-	qt2fsKeys[Qt::Key_Minus + Qt::KeypadModifier] = KEY_PADMINUS;
-	qt2fsKeys[Qt::Key_Space] = KEY_SPACEBAR;
-	qt2fsKeys[Qt::Key_Escape] = KEY_ESC;
 
 	_standardCursor.reset(new QCursor(Qt::ArrowCursor));
 	_moveCursor.reset(new QCursor(Qt::SizeAllCursor));
@@ -178,38 +166,53 @@ void RenderWidget::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void RenderWidget::keyPressEvent(QKeyEvent* key) {
-	if (key->isAutoRepeat()) {
-		QWidget::keyPressEvent(key);
+	if (_viewport != nullptr && key->key() == Qt::Key_Escape && _viewport->button_down) {
+		_viewport->cancel_drag();
+		_usingMarkingBox = false;
+		key->accept();
 		return;
 	}
 
-	auto code = key->key() + (int) key->modifiers();
-	if (!qt2fsKeys.count(code)) {
+	if (!ControlBindings::instance().handleKeyPress(key)) {
 		QWidget::keyPressEvent(key);
 		return;
 	}
-
-	key_mark(qt2fsKeys.at(code), 1, 0);
+	key->accept();
 }
 
 void RenderWidget::keyReleaseEvent(QKeyEvent* key) {
-	if (key->isAutoRepeat()) {
+	if (!ControlBindings::instance().handleKeyRelease(key)) {
 		QWidget::keyReleaseEvent(key);
 		return;
 	}
-
-	auto code = key->key() + (int) key->modifiers();
-	if (!qt2fsKeys.count(code)) {
-		QWidget::keyReleaseEvent(key);
-		return;
+	key->accept();
+}
+bool RenderWidget::event(QEvent* evt) {
+	if (evt->type() == QEvent::ShortcutOverride) {
+		auto* keyEvent = static_cast<QKeyEvent*>(evt);
+		if (ControlBindings::instance().matches(keyEvent)) {
+			evt->accept();
+			return true;
+		}
 	}
 
-	key_mark(qt2fsKeys.at(code), 0, 0);
+	return QWidget::event(evt);
 }
 void RenderWidget::mouseDoubleClickEvent(QMouseEvent* event) {
 	event->ignore();
 }
 void RenderWidget::mousePressEvent(QMouseEvent* event) {
+	if (event->button() == Qt::RightButton) {
+		if (_viewport != nullptr && _viewport->button_down) {
+			_viewport->cancel_drag();
+			_usingMarkingBox = false;
+			event->accept();
+		} else {
+			event->ignore();
+		}
+		return;
+	}
+
 	if (event->button() != Qt::LeftButton) {
 		// Ignore everything that has nothing to to with the left button
 		return QWidget::mousePressEvent(event);
@@ -229,13 +232,12 @@ void RenderWidget::mousePressEvent(QMouseEvent* event) {
 	_viewport->on_object = _viewport->select_object(event->x(), event->y());
 	_viewport->button_down = 1;
 
-	_viewport->drag_rotate_save_backup();
-
 	if (event->modifiers().testFlag(Qt::ControlModifier)) {  // add a new object
 		if (!_viewport->Bg_bitmap_dialog) {
 			if (_viewport->on_object == -1) {
 				_viewport->Selection_lock = 0;  // force off selection lock
-				_viewport->on_object = _viewport->create_object_on_grid(event->x(), event->y(), waypoint_instance);
+				auto spawn_prop = event->modifiers().testFlag(Qt::ShiftModifier);
+				_viewport->on_object = _viewport->create_object_on_grid(event->x(), event->y(), waypoint_instance, spawn_prop);
 
 			} else {
 				_viewport->Dup_drag = 1;
@@ -273,6 +275,9 @@ void RenderWidget::mousePressEvent(QMouseEvent* event) {
 			}
 		}
 	}
+
+	// Save drag/rotate backup after selection state is finalized for this click.
+	_viewport->drag_rotate_save_backup();
 
 	if (query_valid_object(fred->currentObject)) {
 		_viewport->original_pos = Objects[fred->currentObject].pos;
@@ -322,7 +327,7 @@ void RenderWidget::mouseMoveEvent(QMouseEvent* event) {
 	// The following will cancel a drag operation if another program running in memory
 	// happens to jump in and take over (such as new email has arrived popup boxes).
 	/*
-	TODO: Investiage if this is still required
+	TODO: Investigate if this is still required
 	if (_viewport->button_down && GetCapture() != this)
 		_viewport->cancel_drag();
 	 */
@@ -352,15 +357,15 @@ void RenderWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 void RenderWidget::mouseReleaseEvent(QMouseEvent* event) {
 	if (event->button() != Qt::LeftButton) {
-		// Ignore everything that has nothing to to with the left button
-		return QWidget::mousePressEvent(event);
+		// Ignore everything that has nothing to do with the left button
+		return QWidget::mouseReleaseEvent(event);
 	}
 
 	_markingBox.x2 = event->x();
 	_markingBox.y2 = event->y();
 
 	/*
-	TODO: Investiage if this is still required
+	TODO: Investigate if this is still required
 	if (_viewport->button_down && GetCapture() != this)
 		_viewport->cancel_drag();
 	*/

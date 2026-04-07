@@ -22,6 +22,7 @@
 #include "io/mouse.h"
 #include "io/timer.h"
 #include "lighting/lighting.h"
+#include "lighting/lighting_profiles.h"
 #include "localization/localize.h"
 #include "menuui/snazzyui.h"
 #include "missionui/chatbox.h"
@@ -768,6 +769,8 @@ void draw_3d_overhead_view(int model_num,
 	overhead_style style,
 	const SCP_string& tcolor)
 {
+	lighting_profiles::set_non_mission_profile non_mission_lighting_profile;
+	
 	ship_info* sip = &Ship_info[ship_class];
 
 	if (model_num < 0) {
@@ -823,6 +826,10 @@ void draw_3d_overhead_view(int model_num,
 		Glowpoint_use_depth_buffer = false;
 
 		model_clear_instance(model_num);
+		int model_instance = model_create_instance(model_objnum_special::OBJNUM_NONE, model_num);
+		if (model_instance >= 0) {
+			model_set_up_techroom_instance(sip, model_instance);
+		}
 		polymodel* pm = model_get(model_num);
 
 		if (sip->replacement_textures.size() > 0) {
@@ -842,7 +849,7 @@ void draw_3d_overhead_view(int model_num,
 
 			render_info.set_flags(MR_NO_TEXTURING | MR_NO_LIGHTING | MR_AUTOCENTER);
 
-			model_render_immediate(&render_info, model_num, &object_orient, &vmd_zero_vector);
+			model_render_immediate(&render_info, model_num, model_instance, &object_orient, &vmd_zero_vector);
 			shadows_end_render();
 			gr_set_clip(x1, y1, x2, y2, resize_mode);
 		}
@@ -857,13 +864,16 @@ void draw_3d_overhead_view(int model_num,
 			render_info.set_team_color(tc, "none", 0, 0);
 		}
 
-		model_render_immediate(&render_info, model_num, &object_orient, &vmd_zero_vector);
+		model_render_immediate(&render_info, model_num, model_instance, &object_orient, &vmd_zero_vector);
 
 		Glowpoint_use_depth_buffer = true;
 
 		batching_render_all();
 
 		shadow_end_frame();
+		if (model_instance >= 0) {
+			model_delete_instance(model_instance);
+		}
 
 		// NOW render the lines for weapons
 		gr_reset_clip();
@@ -892,7 +902,12 @@ void draw_3d_overhead_view(int model_num,
 				gr_circle(bank_coords[x][0] + bank_prim_offset, bank_coords[x][1] + bank_y_offset, 5, resize_mode);
 				for (y = 0; y < pm->gun_banks[x].num_slots; y++) {
 					// Stuff
-					vm_vec_unrotate(&subobj_pos, &pm->gun_banks[x].pnt[y], &object_orient);
+					if (pm->flags & PM_FLAG_AUTOCEN) {
+						vm_vec_sub(&subobj_pos, &pm->gun_banks[x].pnt[y], &pm->autocenter);
+						vm_vec_unrotate(&subobj_pos, &subobj_pos, &object_orient);
+					} else {
+						vm_vec_unrotate(&subobj_pos, &pm->gun_banks[x].pnt[y], &object_orient);
+					}
 					g3_rotate_vertex(&draw_point, &subobj_pos);
 					g3_project_vertex(&draw_point);
 					int resize = resize_mode;
@@ -966,7 +981,12 @@ void draw_3d_overhead_view(int model_num,
 					5,
 					resize_mode);
 				for (y = 0; y < pm->missile_banks[x].num_slots; y++) {
-					vm_vec_unrotate(&subobj_pos, &pm->missile_banks[x].pnt[y], &object_orient);
+					if (pm->flags & PM_FLAG_AUTOCEN) {
+						vm_vec_sub(&subobj_pos, &pm->missile_banks[x].pnt[y], &pm->autocenter);
+						vm_vec_unrotate(&subobj_pos, &subobj_pos, &object_orient);
+					} else {
+						vm_vec_unrotate(&subobj_pos, &pm->missile_banks[x].pnt[y], &object_orient);
+					}
 					g3_rotate_vertex(&draw_point, &subobj_pos);
 					g3_project_vertex(&draw_point);
 					int resize = resize_mode;
@@ -2822,6 +2842,7 @@ void weapon_select_do(float frametime)
 
 		model_render_params render_info;
 		draw_model_rotating(&render_info, 
+			-1,
 			modelIdx,
 			weapon_ani_coords[0],
 			weapon_ani_coords[1],

@@ -21,12 +21,14 @@
 #include <ship/shipfx.h>
 #include <jumpnode/jumpnode.h>
 #include <asteroid/asteroid.h>
+#include <prop/prop.h>
 #include <iff_defs/iff_defs.h>
 #include <math/fvi.h>
 #include <graphics/light.h>
 #include <mod_table/mod_table.h>
 
 #include "mission/object.h"
+#include "prop/prop.h"
 #include "weapon/weapon.h"
 
 
@@ -481,6 +483,9 @@ void FredRenderer::display_ship_info(int cur_object_index) {
 		if (objp->flags[Object::Object_Flags::Hidden]) {
 			render = 0;
 		}
+		if (!_viewport->isObjectVisibleInLayer(objp)) {
+			render = 0;
+		}
 
 		g3_rotate_vertex(&v, &objp->pos);
 		if (!(v.codes & CC_BEHIND) && render) {
@@ -508,6 +513,11 @@ void FredRenderer::display_ship_info(int cur_object_index) {
 					} else if (objp->type == OBJ_JUMP_NODE) {
 						CJumpNode* jnp = jumpnode_get_by_objnum(OBJ_INDEX(objp));
 						sprintf(buf, "%s\n%s", jnp->GetName(), jnp->GetDisplayName());
+					} else if (objp->type == OBJ_PROP) {
+						auto propp = prop_id_lookup(objp->instance);
+						if (propp != nullptr) {
+							sprintf(buf, "%s\n", propp->prop_name);
+						}
 					} else
 						Assert(0);
 				}
@@ -548,6 +558,9 @@ void FredRenderer::display_active_ship_subsystem(subsys_to_render& Render_subsys
 	if (cur_object_index != -1) {
 		if (Objects[cur_object_index].type == OBJ_SHIP) {
 			object* objp = &Objects[cur_object_index];
+			if (!_viewport->isObjectVisibleInLayer(objp)) {
+				return;
+			}
 
 			// if this option is checked, we want to render info for all subsystems, not just the ones we select with K and Shift-K
 			if (view().Highlight_selectable_subsys) {
@@ -794,6 +807,12 @@ void FredRenderer::render_one_model_htl(object* objp,
 
 	Assert(objp->type != OBJ_NONE);
 
+	// if this object isn't fully created yet, don't render it
+	if (objp->type == OBJ_SHIP && Ships[objp->instance].create_time == 0)
+		return;
+	if (objp->type == OBJ_PROP && (!Props[objp->instance].has_value() || Props[objp->instance].value().create_time == 0))
+		return;
+
 	if (objp->type == OBJ_JUMP_NODE) {
 		return;
 	}
@@ -839,7 +858,42 @@ void FredRenderer::render_one_model_htl(object* objp,
 	}
 
 	// build flags
-	if ((view().Show_ship_models || view().Show_outlines) && ((objp->type == OBJ_SHIP) || (objp->type == OBJ_START))) {
+	if ((objp->type == OBJ_PROP) && (view().Show_ship_models || view().Show_outlines)) {
+		uint64_t flags = MR_NORMAL;
+
+		if (!view().Lighting_on) {
+			flags |= MR_NO_LIGHTING;
+		}
+
+		if (view().FullDetail) {
+			flags |= MR_FULL_DETAIL;
+		}
+
+		auto propp = prop_id_lookup(objp->instance);
+		if (propp == nullptr || !SCP_vector_inbounds(Prop_info, propp->prop_info_index)) {
+			return;
+		}
+
+		model_render_params render_info;
+		render_info.set_debug_flags(0);
+
+		if (Fred_outline) {
+			render_info.set_color(Fred_outline >> 16, (Fred_outline >> 8) & 0xff, Fred_outline & 0xff);
+			render_info.set_flags(flags | MR_SHOW_OUTLINE_HTL | MR_NO_LIGHTING | MR_NO_POLYS | MR_NO_TEXTURING);
+			model_render_immediate(&render_info,
+								   Prop_info[propp->prop_info_index].model_num,
+								   propp->model_instance_num,
+								   &objp->orient,
+								   &objp->pos);
+		}
+
+		render_info.set_flags(flags);
+		model_render_immediate(&render_info,
+							   Prop_info[propp->prop_info_index].model_num,
+							   propp->model_instance_num,
+							   &objp->orient,
+							   &objp->pos);
+	} else if ((view().Show_ship_models || view().Show_outlines) && ((objp->type == OBJ_SHIP) || (objp->type == OBJ_START))) {
 		uint64_t flags = 0;
 
 		g3_start_instance_matrix(&Eye_position, &Eye_matrix, 0);
@@ -920,9 +974,16 @@ void FredRenderer::render_one_model_htl(object* objp,
 			g = 127;
 			b = 0;
 		} else if (objp->type == OBJ_WAYPOINT) {
-			r = 96;
-			g = 0;
-			b = 112;
+			waypoint_list* wpt_list = find_waypoint_list_with_instance(objp->instance);
+			if (wpt_list && wpt_list->get_has_custom_color()) {
+				r = wpt_list->get_color_r();
+				g = wpt_list->get_color_g();
+				b = wpt_list->get_color_b();
+			} else {
+				r = 96;
+				g = 0;
+				b = 112;
+			}
 		} else if (objp->type == OBJ_POINT) {
 			if (objp->instance != BRIEFING_LOOKAT_POINT_ID) {
 				///! \fixme Briefing stuff!
@@ -933,6 +994,10 @@ void FredRenderer::render_one_model_htl(object* objp,
 			r = 196;
 			g = 32;
 			b = 196;
+		} else if (objp->type == OBJ_PROP) {
+			r = 255;
+			g = 255;
+			b = 255;
 		} else
 			Assert(0);
 
@@ -952,11 +1017,14 @@ void FredRenderer::render_one_model_htl(object* objp,
 	}
 
 	if (objp->type == OBJ_WAYPOINT) {
-		for (auto objIdx : rendering_order) {
-			o2 = &Objects[objIdx];
-			if (o2->type == OBJ_WAYPOINT) {
-				if ((o2->instance == objp->instance - 1) || (o2->instance == objp->instance + 1)) {
-					g3_draw_htl_line(&o2->pos, &objp->pos);
+		waypoint_list* wpt_list = find_waypoint_list_with_instance(objp->instance);
+		if (!wpt_list || !wpt_list->get_no_draw_lines()) {
+			for (auto objIdx : rendering_order) {
+				o2 = &Objects[objIdx];
+				if (o2->type == OBJ_WAYPOINT) {
+					if ((o2->instance == objp->instance - 1) || (o2->instance == objp->instance + 1)) {
+						g3_draw_htl_line(&o2->pos, &objp->pos);
+					}
 				}
 			}
 		}
@@ -980,6 +1048,9 @@ void FredRenderer::render_models(int cur_object_index,
 	enable_htl();
 
 	auto render_function = [&](object* objp) {
+		if (!_viewport->isObjectVisibleInLayer(objp)) {
+			return;
+		}
 		this->render_one_model_htl(objp,
 								   cur_object_index,
 								   Bg_bitmap_dialog);
@@ -1099,7 +1170,7 @@ void FredRenderer::render_frame(int cur_object_index,
 	display_active_ship_subsystem(Render_subsys, cur_object_index);
 	render_active_rect(box_marking, marking_box);
 
-	if (query_valid_object(_viewport->Cursor_over)) { // display a tool-tip like infobox
+	if (query_valid_object(_viewport->Cursor_over) && _viewport->isObjectVisibleInLayer(&Objects[_viewport->Cursor_over])) { // display a tool-tip like infobox
 		pos = Objects[_viewport->Cursor_over].pos;
 		inst = Objects[_viewport->Cursor_over].instance;
 		if ((Objects[_viewport->Cursor_over].type == OBJ_SHIP) || (Objects[_viewport->Cursor_over].type == OBJ_START)) {
@@ -1166,6 +1237,15 @@ void FredRenderer::render_frame(int cur_object_index,
 	gr_get_string_size(&w, &h, buf);
 	gr_set_color_fast(&colour_white);
 	gr_string(gr_screen.max_w - w - 2, 2, buf);
+
+	const auto hiddenLayerCount = _viewport->getHiddenLayerCount();
+	if (hiddenLayerCount > 0) {
+		gr_set_color(255, 0, 0);
+		sprintf(buf, "%d %s Hidden",
+				hiddenLayerCount,
+				hiddenLayerCount == 1 ? "Layer" : "Layers");
+		gr_string(8, 8, buf);
+	}
 
 	g3_end_frame(); // ** Accounted for
 	render_compass();

@@ -137,10 +137,11 @@ const SCP_vector<std::pair<int, std::pair<const char*, int>>> DetailLevelValues 
 
 static void parse_nebula_detail_func()
 {
-	int value[static_cast<int>(DefaultDetailPreset::Num_detail_presets)];
-	stuff_int_list(value, static_cast<int>(DefaultDetailPreset::Num_detail_presets), RAW_INTEGER_TYPE);
+	constexpr int num_detail_presets = static_cast<int>(DefaultDetailPreset::Num_detail_presets);
+	int value[num_detail_presets];
+	stuff_int_list(value, num_detail_presets, ParseLookupType::RAW_INTEGER_TYPE);
 
-	for (int i = 0; i < static_cast<int>(DefaultDetailPreset::Num_detail_presets); i++) {
+	for (int i = 0; i < num_detail_presets; i++) {
 
 		if (value[i] < 0 || value[i] > MAX_DETAIL_VALUE) {
 			error_display(0, "%i is an invalid detail level value!", value[i]);
@@ -150,6 +151,7 @@ static void parse_nebula_detail_func()
 	}
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 const auto NebulaDetailOption __UNUSED = options::OptionBuilder<int>("Graphics.NebulaDetail",
                      std::pair<const char*, int>{"Nebula Detail", 1361},
                      std::pair<const char*, int>{"Detail level of nebulas", 1697})
@@ -679,6 +681,7 @@ int neb2_skip_render(object *objp, float z_depth)
 
 		// any ship or raw pof less than 3% visible at their closest point
 		case OBJ_RAW_POF:
+		case OBJ_PROP:
 		case OBJ_SHIP:
 			if (fog < 0.03f)
 				return 1;
@@ -1100,6 +1103,7 @@ void neb2_get_fog_values(float *fnear, float *ffar, object *objp)
 		return;
 	}
 
+	// Future TODO: Add fog_start_dist and fog_complete_dist to Props
 	// determine what fog index to use
 	if(objp->type == OBJ_SHIP) {
 		Assert((objp->instance >= 0) && (objp->instance < MAX_SHIPS));

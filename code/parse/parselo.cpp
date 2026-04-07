@@ -68,23 +68,41 @@ static const SCP_unordered_map<SCP_string, SCP_string> retail_hashes = {
 
 
 //	Return true if this character is white space, else false.
-int is_white_space(char ch)
+bool is_white_space(char ch)
 {
 	return ((ch == ' ') || (ch == '\t') || (ch == EOLN) || (ch == CARRIAGE_RETURN));
 }
-int is_white_space(unicode::codepoint_t cp)
+
+//	Return true if this character is white space, else false.
+bool is_white_space(unicode::codepoint_t cp)
 {
 	return ((cp == UNICODE_CHAR(' ')) || (cp == UNICODE_CHAR('\t')) || (cp == (unicode::codepoint_t)EOLN) || (cp == (unicode::codepoint_t)CARRIAGE_RETURN));
 }
 
+//  Returns the length of the string up to but excluding any white space.  This could be the entire string if the string contains no white space.
+//	Equivalently, returns the position of the first white space character, or the string length if no white space is found.
+size_t find_white_space(const char *str)
+{
+	return strcspn(str, " \t\n\r");
+}
+
 // Returns true if this character is gray space, else false (gray space is white space except for EOLN).
-int is_gray_space(char ch)
+bool is_gray_space(char ch)
 {
 	return ((ch == ' ') || (ch == '\t'));
 }
 
-bool is_gray_space(unicode::codepoint_t cp) {
+// Returns true if this character is gray space, else false (gray space is white space except for EOLN).
+bool is_gray_space(unicode::codepoint_t cp)
+{
 	return cp == UNICODE_CHAR(' ') || cp == UNICODE_CHAR('\t');
+}
+
+//  Returns the length of the string up to but excluding any white space.  This could be the entire string if the string contains no white space.
+//	Equivalently, returns the position of the first white space character, or the string length if no white space is found.
+size_t find_gray_space(const char *str)
+{
+	return strcspn(str, " \t");
 }
 
 bool is_parenthesis(char ch)
@@ -823,6 +841,58 @@ int required_string_one_of(int arg_count, ...)
 		advance_to_eoln(NULL);
 		ignore_white_space();
 		count++;
+	}
+
+	return -1;
+}
+
+int required_string_one_of_fred(int arg_count, ...)
+{
+	Assertion(arg_count > 0, "required_string_one_of_fred() called with arg_count of %d; get a coder!\n", arg_count);
+
+	va_list vl;
+	int idx;
+	char* expected;
+
+	ignore_white_space();
+
+	while (*Mp != '\0') {
+		va_start(vl, arg_count);
+		for (idx = 0; idx < arg_count; idx++) {
+			expected = va_arg(vl, char*);
+			if (strnicmp(expected, Mp, strlen(expected)) == 0) {
+				diag_printf("Found required string [%s]\n", token_found = expected);
+				va_end(vl);
+				return idx;
+			}
+		}
+		va_end(vl);
+
+		advance_to_eoln(nullptr);
+		ignore_white_space();
+	}
+
+	// EOF reached without finding any token
+	if (*Mp == '\0') {
+		SCP_string message = "Unable to find any required token: ";
+
+		va_start(vl, arg_count);
+		for (idx = 0; idx < arg_count; idx++) {
+			expected = va_arg(vl, char*);
+			message += "[";
+			message += expected;
+			message += "]";
+			if (arg_count == 2 && idx == 0) {
+				message += " or ";
+			} else if (idx == arg_count - 2) {
+				message += ", or ";
+			} else if (idx < arg_count - 2) {
+				message += ", ";
+			}
+		}
+		va_end(vl);
+
+		diag_printf("%s\n", message.c_str());
 	}
 
 	return -1;
@@ -3189,39 +3259,42 @@ size_t stuff_string_list(char slp[][NAME_LENGTH], size_t max_strings)
 	return list.size();
 }
 
-const char* get_lookup_type_name(int lookup_type)
+const char* get_lookup_type_name(ParseLookupType lookup_type)
 {
-	switch (lookup_type) {
-		case SHIP_TYPE:
-			return "Ships";
-		case SHIP_INFO_TYPE:
-			return "Ship Classes";
-		case WEAPON_POOL_TYPE:
-			return "Weapon Pool";
-		case WEAPON_LIST_TYPE:
-			return "Weapon Types";
-		case RAW_INTEGER_TYPE:
+	switch (lookup_type)
+	{
+		case ParseLookupType::RAW_INTEGER_TYPE:
 			return "Untyped integer list";
-		case MISSION_LOADOUT_SHIP_LIST:
+		case ParseLookupType::SHIP_TYPE:
+			return "Ships";
+		case ParseLookupType::SHIP_INFO_TYPE:
+			return "Ship Classes";
+		case ParseLookupType::WEAPON_LIST_TYPE:
+			return "Weapon Types";
+		case ParseLookupType::WEAPON_POOL_TYPE:
+			return "Weapon Pool";
+		case ParseLookupType::FIREBALL_INFO_TYPE:
+			return "Fireball Types";
+		case ParseLookupType::MISSION_LOADOUT_SHIP_LIST:
 			return "Mission Loadout Ships";
-		case MISSION_LOADOUT_WEAPON_LIST:
+		case ParseLookupType::MISSION_LOADOUT_WEAPON_LIST:
 			return "Mission Loadout Weapons";
-		case CAMPAIGN_LOADOUT_SHIP_LIST:
+		case ParseLookupType::CAMPAIGN_LOADOUT_SHIP_LIST:
 			return "Campaign Loadout Ships";
-		case CAMPAIGN_LOADOUT_WEAPON_LIST:
+		case ParseLookupType::CAMPAIGN_LOADOUT_WEAPON_LIST:
 			return "Campaign Loadout Weapons";
+		default:
+			return "Unknown lookup type, tell a coder!";
 	}
-
-	return "Unknown lookup type, tell a coder!";
 }
 
 // use a functor here so that we don't need to re-roll the parsing function for both variants of stuff_int_lists
 struct StuffIntListParser
 {
-	int lookup_type;
+	ParseLookupType lookup_type;
 	bool warn_on_lookup_failure;
 
-	StuffIntListParser(int _lookup_type, bool _warn_on_lookup_failure)
+	StuffIntListParser(ParseLookupType _lookup_type, bool _warn_on_lookup_failure)
 		: lookup_type(_lookup_type), warn_on_lookup_failure(_warn_on_lookup_failure)
 	{}
 
@@ -3233,25 +3306,25 @@ struct StuffIntListParser
 			get_string(str);
 
 			switch (lookup_type) {
-				case SHIP_TYPE:
+				case ParseLookupType::SHIP_TYPE:
 					num = ship_name_lookup(str.c_str());	// returns index of Ship[] entry with name
 					if (num < 0 && warn_on_lookup_failure)
 						error_display(0, "Unable to find ship %s in stuff_int_list!", str.c_str());
 					break;
 
-				case SHIP_INFO_TYPE:
+				case ParseLookupType::SHIP_INFO_TYPE:
 					num = ship_info_lookup(str.c_str());	// returns index of Ship_info[] entry with name
 					if (num < 0 && warn_on_lookup_failure)
 						error_display(0, "Unable to find ship class %s in stuff_int_list!", str.c_str());
 					break;
 
-				case WEAPON_POOL_TYPE:
+				case ParseLookupType::WEAPON_POOL_TYPE:
 					num = weapon_info_lookup(str.c_str());
 					if (num < 0 && warn_on_lookup_failure)
 						error_display(0, "Unable to find weapon class %s in stuff_int_list!", str.c_str());
 					break;
 
-				case WEAPON_LIST_TYPE:
+				case ParseLookupType::WEAPON_LIST_TYPE:
 					num = weapon_info_lookup(str.c_str());
 					if (str.empty())
 						valid_negative = true;
@@ -3259,13 +3332,19 @@ struct StuffIntListParser
 						error_display(0, "Unable to find weapon class %s in stuff_int_list!", str.c_str());
 					break;
 
-				case RAW_INTEGER_TYPE:
+				case ParseLookupType::FIREBALL_INFO_TYPE:
+					num = fireball_info_lookup(str.c_str());
+					if (num < 0 && warn_on_lookup_failure)
+						error_display(0, "Unable to find fireball type %s in stuff_int_list!", str.c_str());
+					break;
+
+				case ParseLookupType::RAW_INTEGER_TYPE:
 					num = atoi(str.c_str());
 					valid_negative = true;
 					break;
 
 				default:
-					error_display(1, "Unknown lookup_type %d in stuff_int_list", lookup_type);
+					UNREACHABLE("Unsupported lookup_type %d in stuff_int_list", static_cast<int>(lookup_type));
 					break;
 			}
 
@@ -3285,7 +3364,7 @@ struct StuffIntListParser
 //	This is of the form ( i* )
 //	  where i is an integer.
 // For example, (1) () (1 2 3) ( 1 ) are legal integer lists.
-size_t stuff_int_list(int *ilp, size_t max_ints, int lookup_type, bool warn_on_lookup_failure)
+size_t stuff_int_list(int *ilp, size_t max_ints, ParseLookupType lookup_type, bool warn_on_lookup_failure)
 {
 	return stuff_token_list(ilp, max_ints, StuffIntListParser(lookup_type, warn_on_lookup_failure), get_lookup_type_name(lookup_type));
 }
@@ -3294,14 +3373,14 @@ size_t stuff_int_list(int *ilp, size_t max_ints, int lookup_type, bool warn_on_l
 //	This is of the form ( i* )
 //	  where i is an integer.
 // For example, (1) () (1 2 3) ( 1 ) are legal integer lists.
-void stuff_int_list(SCP_vector<int> &ilp, int lookup_type, bool warn_on_lookup_failure)
+void stuff_int_list(SCP_vector<int> &ilp, ParseLookupType lookup_type, bool warn_on_lookup_failure)
 {
 	stuff_token_list(ilp, StuffIntListParser(lookup_type, warn_on_lookup_failure), get_lookup_type_name(lookup_type));
 }
 
 // Karajorma/Goober5000 - Stuffs a loadout list by parsing a list of ship or weapon choices.
 // Unlike stuff_int_list it can deal with variables
-void stuff_loadout_list(SCP_vector<loadout_row> &list, int lookup_type)
+void stuff_loadout_list(SCP_vector<loadout_row> &list, ParseLookupType lookup_type)
 {
 	stuff_token_list(list, [&](loadout_row *buf)->bool {
 		SCP_string str;
@@ -3310,7 +3389,7 @@ void stuff_loadout_list(SCP_vector<loadout_row> &list, int lookup_type)
 		// if we've got a variable get the variable index and copy its value into str so that regardless of whether we found
 		// a variable or not it now holds the name of the ship or weapon we're interested in.
 		if (variable_found) {
-			Assert(lookup_type != CAMPAIGN_LOADOUT_SHIP_LIST);
+			Assert(lookup_type != ParseLookupType::CAMPAIGN_LOADOUT_SHIP_LIST);
 			buf->index_sexp_var = get_index_sexp_variable_name(str);
 
 			if (buf->index_sexp_var < 0) {
@@ -3321,18 +3400,18 @@ void stuff_loadout_list(SCP_vector<loadout_row> &list, int lookup_type)
 		}
 
 		switch (lookup_type) {
-			case MISSION_LOADOUT_SHIP_LIST:
-			case CAMPAIGN_LOADOUT_SHIP_LIST:
+			case ParseLookupType::MISSION_LOADOUT_SHIP_LIST:
+			case ParseLookupType::CAMPAIGN_LOADOUT_SHIP_LIST:
 				buf->index = ship_info_lookup(str.c_str());
 				break;
 
-			case MISSION_LOADOUT_WEAPON_LIST:
-			case CAMPAIGN_LOADOUT_WEAPON_LIST:
+			case ParseLookupType::MISSION_LOADOUT_WEAPON_LIST:
+			case ParseLookupType::CAMPAIGN_LOADOUT_WEAPON_LIST:
 				buf->index = weapon_info_lookup(str.c_str());
 				break;
 
 			default:
-				Assertion(false, "Unsupported lookup type %d", lookup_type);
+				UNREACHABLE("Unsupported lookup_type %d in stuff_loadout_list", static_cast<int>(lookup_type));
 				return false;
 		}
 
@@ -3340,24 +3419,24 @@ void stuff_loadout_list(SCP_vector<loadout_row> &list, int lookup_type)
 
 		// Complain if this isn't a valid ship or weapon and we are loading a mission. Campaign files can be loaded containing
 		// no ships from the current tables (when swapping mods) so don't report that as an error.
-		if (buf->index < 0 && (lookup_type == MISSION_LOADOUT_SHIP_LIST || lookup_type == MISSION_LOADOUT_WEAPON_LIST)) {
+		if (buf->index < 0 && (lookup_type == ParseLookupType::MISSION_LOADOUT_SHIP_LIST || lookup_type == ParseLookupType::MISSION_LOADOUT_WEAPON_LIST)) {
 			error_display(0, "Invalid type \"%s\" found in loadout of mission file...skipping", str.c_str());
 			skip_this_entry = true;
 
 			// increment counter for release FRED builds.
 			Num_unknown_loadout_classes++;
 		}
-		else if ((Game_mode & GM_MULTIPLAYER) && (lookup_type == MISSION_LOADOUT_WEAPON_LIST) && (Weapon_info[buf->index].maximum_children_spawned > 300)){
+		else if ((Game_mode & GM_MULTIPLAYER) && (lookup_type == ParseLookupType::MISSION_LOADOUT_WEAPON_LIST) && (Weapon_info[buf->index].maximum_children_spawned > 300)){
 			Warning(LOCATION, "Weapon '%s' has more than 300 possible spawned weapons over its lifetime! This can cause issues for Multiplayer.", Weapon_info[buf->index].name);
 		}
 
 		if (!skip_this_entry) {
 			// similarly, complain if this is a valid ship or weapon class that the player can't use
-			if ((lookup_type == MISSION_LOADOUT_SHIP_LIST) && (!(Ship_info[buf->index].flags[Ship::Info_Flags::Player_ship])) ) {
+			if ((lookup_type == ParseLookupType::MISSION_LOADOUT_SHIP_LIST) && (!(Ship_info[buf->index].flags[Ship::Info_Flags::Player_ship])) ) {
 				error_display(0, "Ship type \"%s\" found in loadout of mission file. This class is not marked as a player ship...skipping", str.c_str());
 				skip_this_entry = true;
 			}
-			else if ((lookup_type == MISSION_LOADOUT_WEAPON_LIST) && (!(Weapon_info[buf->index].wi_flags[Weapon::Info_Flags::Player_allowed])) ) {
+			else if ((lookup_type == ParseLookupType::MISSION_LOADOUT_WEAPON_LIST) && (!(Weapon_info[buf->index].wi_flags[Weapon::Info_Flags::Player_allowed])) ) {
 				nprintf(("Warning",  "Warning: Weapon type %s found in loadout of mission file. This class is not marked as a player allowed weapon...skipping\n", str.c_str()));
 				if ( !Is_standalone )
 					error_display(0, "Weapon type \"%s\" found in loadout of mission file. This class is not marked as a player allowed weapon...skipping", str.c_str());
@@ -3366,7 +3445,7 @@ void stuff_loadout_list(SCP_vector<loadout_row> &list, int lookup_type)
 		}
 
 		// Loadout counts are only needed for missions
-		if (lookup_type == MISSION_LOADOUT_SHIP_LIST || lookup_type == MISSION_LOADOUT_WEAPON_LIST)
+		if (lookup_type == ParseLookupType::MISSION_LOADOUT_SHIP_LIST || lookup_type == ParseLookupType::MISSION_LOADOUT_WEAPON_LIST)
 		{
 			ignore_white_space();
 
@@ -3618,6 +3697,7 @@ void display_parse_diagnostics()
 char *split_str_once(char *src, int max_pixel_w, float scale)
 {
 	char *brk = nullptr;
+	char *word_brk = nullptr; // if we fail, break here (even if its in the middle of a word)
 	bool last_was_white = false;
 
 	Assert(src);
@@ -3642,6 +3722,9 @@ char *split_str_once(char *src, int max_pixel_w, float scale)
 				return src + i + 1;
 			}
 		}
+		else if (word_brk == nullptr) {
+			word_brk = src + i;
+		}
 
 		if (is_white_space(src[i])) {
 			if (!last_was_white) {
@@ -3663,10 +3746,9 @@ char *split_str_once(char *src, int max_pixel_w, float scale)
 	}
 
 	// if we are over max pixel width and weren't able to come up with a good non-word
-	// split then just return the original src text and the calling function should
-	// have to handle the result
+	// split then just split the word
 	if ( (w > max_pixel_w) && ((i == 0) || !brk) ) {
-		return src;
+		return word_brk;
 	}
 
 	if (!brk) {
@@ -4318,18 +4400,10 @@ bool can_construe_as_integer(const char *text)
 
 // Goober5000
 // yoinked gratefully from dbugfile.cpp
-void vsprintf(SCP_string &dest, const char *format, va_list ap)
+void vsprintf(SCP_string &dest, const char *format, va_list ap, size_t write_offset)
 {
 	va_list copy;
-
-#if defined(_MSC_VER) && _MSC_VER < 1800
-	// Only Visual Studio >= 2013 supports va_copy
-	// This isn't portable but should work for Visual Studio
-	copy = ap;
-#else
 	va_copy(copy, ap);
-#endif
-
 	int needed_length = vsnprintf(nullptr, 0, format, copy);
 	va_end(copy);
 
@@ -4338,15 +4412,23 @@ void vsprintf(SCP_string &dest, const char *format, va_list ap)
 		return;
 	}
 
-	dest.resize(static_cast<size_t>(needed_length));
-	vsnprintf(&dest[0], dest.size() + 1, format, ap);
+	dest.resize(write_offset + i2sz(needed_length));
+	vsnprintf(&dest[write_offset], i2sz(needed_length) + 1, format, ap);
 }
 
-void sprintf(SCP_string &dest, const char *format, ...)
+void sprintf(SCP_string &dest, SCP_FORMAT_STRING const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
 	vsprintf(dest, format, args);
+	va_end(args);
+}
+
+void sprintf_concat(SCP_string &dest, SCP_FORMAT_STRING const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	vsprintf(dest, format, args, dest.size());
 	va_end(args);
 }
 
@@ -4463,7 +4545,7 @@ void consolidate_double_characters(char *src, char ch)
 	while (*src)
 	{
 		if (*src == ch && *(src + 1) == ch)
-			dest--;
+			--dest;
 
 		++src;
 		++dest;
@@ -4471,6 +4553,28 @@ void consolidate_double_characters(char *src, char ch)
 		if (src != dest)
 			*dest = *src;
 	}
+}
+
+// Goober5000
+// Used for escape sequences: ## to #, !! to !, etc.
+void consolidate_double_characters(SCP_string &str, char ch)
+{
+	auto src = str.begin();
+	auto dest = src;
+	while (src != str.end())
+	{
+		if (*src == ch && *(src + 1) == ch)
+			--dest;
+
+		++src;
+		++dest;
+
+		if (src != dest && src != str.end())
+			*dest = *src;
+	}
+
+	if (src != dest)
+		str.resize(dest - str.begin());
 }
 
 char *three_dot_truncate(char *buffer, const char *source, size_t buffer_size)

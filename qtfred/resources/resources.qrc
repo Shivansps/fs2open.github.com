@@ -74,5 +74,6 @@
     <file>images/wingform.png</file>
     <file>images/zoomext.png</file>
     <file>images/zoomsel.png</file>
+	<file>images/fred_about.png</file>
   </qresource>
 </RCC>

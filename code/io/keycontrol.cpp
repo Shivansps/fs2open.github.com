@@ -2640,7 +2640,7 @@ int button_function(int n)
 
 			// target the next hostile target
 			case TARGET_NEXT_CLOSEST_HOSTILE:
-				hud_target_next_list();
+				hud_target_next_list(1,1);
 				break;
 
 			// target the previous closest hostile
@@ -2650,7 +2650,7 @@ int button_function(int n)
 
 			// target the next friendly ship
 			case TARGET_NEXT_CLOSEST_FRIENDLY:
-				hud_target_next_list(0);
+				hud_target_next_list(0,1);
 				break;
 
 			// target the closest friendly ship
@@ -2718,62 +2718,74 @@ int button_function(int n)
 	}
 
 	keyHasBeenUsed = TRUE;
-	switch(n) {
-		// undefined in multiplayer for clients right now
-		// match target speed
-		case MATCH_TARGET_SPEED:
-			// If player is auto-matching, break auto-match speed
-			if ( Player->flags & PLAYER_FLAGS_AUTO_MATCH_SPEED ) {
-				Player->flags &= ~PLAYER_FLAGS_AUTO_MATCH_SPEED;
-			}
-			player_match_target_speed();
-			break;
+	switch (n) {
+	// undefined in multiplayer for clients right now
+	// match target speed
+	case MATCH_TARGET_SPEED:
+		// If player is auto-matching, break auto-match speed
+		if (Player->flags & PLAYER_FLAGS_AUTO_MATCH_SPEED) {
+			Player->flags &= ~PLAYER_FLAGS_AUTO_MATCH_SPEED;
+		}
+		player_match_target_speed();
+		break;
 
-		// toggle auto-targeting
-		case TOGGLE_AUTO_TARGETING:
-			hud_gauge_popup_start(HUD_AUTO_TARGET);
-			Players[Player_num].flags ^= PLAYER_FLAGS_AUTO_TARGETING;
-			if ( Players[Player_num].flags & PLAYER_FLAGS_AUTO_TARGETING ) {
-				if (hud_sensors_ok(Player_ship)) {
-					hud_target_closest(iff_get_attackee_mask(Player_ship->team), -1, FALSE, TRUE );
-					snd_play(gamesnd_get_game_sound(GameSounds::SHIELD_XFER_OK), 1.0f);
-					//HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Auto targeting activated", -1));
-				} else {
-					Players[Player_num].flags ^= PLAYER_FLAGS_AUTO_TARGETING;
-				}
-			} else {
+	// toggle auto-targeting
+	case TOGGLE_AUTO_TARGETING:
+		hud_gauge_popup_start(HUD_AUTO_TARGET);
+		Players[Player_num].flags ^= PLAYER_FLAGS_AUTO_TARGETING;
+		if (Players[Player_num].flags & PLAYER_FLAGS_AUTO_TARGETING) {
+			if (hud_sensors_ok(Player_ship)) {
+				hud_target_closest(iff_get_attackee_mask(Player_ship->team), -1, FALSE, TRUE);
 				snd_play(gamesnd_get_game_sound(GameSounds::SHIELD_XFER_OK), 1.0f);
-				//HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Auto targeting deactivated", -1));
+				// HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Auto targeting activated", -1));
+			} else {
+				Players[Player_num].flags ^= PLAYER_FLAGS_AUTO_TARGETING;
 			}
-			break;
+		} else {
+			snd_play(gamesnd_get_game_sound(GameSounds::SHIELD_XFER_OK), 1.0f);
+			// HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Auto targeting deactivated", -1));
+		}
+		break;
 
-		// target the closest repair ship
-		case TARGET_CLOSEST_REPAIR_SHIP:
-			// AL: Try to find the closest repair ship coming to repair the player... if no support
-			//		 ships are coming to rearm the player, just try for the closest repair ship
-			if ( hud_target_closest_repair_ship(OBJ_INDEX(Player_obj)) == 0 ) {
-				if ( hud_target_closest_repair_ship() == 0 ) {
-					snd_play(gamesnd_get_game_sound(GameSounds::TARGET_FAIL));
-				}
+	// target the closest repair ship
+	case TARGET_CLOSEST_REPAIR_SHIP:
+		// AL: Try to find the closest repair ship coming to repair the player... if no support
+		//		 ships are coming to rearm the player, just try for the closest repair ship
+		if (hud_target_closest_repair_ship(OBJ_INDEX(Player_obj)) == 0) {
+			if (hud_target_closest_repair_ship() == 0) {
+				snd_play(gamesnd_get_game_sound(GameSounds::TARGET_FAIL));
 			}
-			break;
+		}
+		break;
 
-		// stop targeting ship
-		case STOP_TARGETING_SHIP:
-			hud_cease_targeting(true);
-			break;
+	// stop targeting ship
+	case STOP_TARGETING_SHIP:
+		hud_cease_targeting(true);
+		break;
 
-		// stop targeting subsystems on ship
-		case STOP_TARGETING_SUBSYSTEM:
-			hud_cease_subsystem_targeting();
-			break;
-			
-		case TARGET_NEXT_BOMB:
-			hud_target_missile(Player_obj, 1);
-			break;
+	// stop targeting subsystems on ship
+	case STOP_TARGETING_SUBSYSTEM:
+		hud_cease_subsystem_targeting();
+		break;
 
-		case TARGET_PREV_BOMB:
-			hud_target_missile(Player_obj, 0);
+	case TARGET_NEXT_BOMB: 
+	{
+		bool target_bomb = ((Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::BOMBS_AND_BOMBERS) ||
+							(Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::ONLY_BOMBS));
+		bool target_bomber = ((Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::BOMBS_AND_BOMBERS) ||
+				(Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::ONLY_BOMBERS));
+		hud_target_hostile_bomb_or_bomber(Player_obj, 1, target_bomb, target_bomber, Target_bomb_or_bomber_use_distance);
+	} 
+		 break;
+
+	case TARGET_PREV_BOMB: 
+	{
+		bool target_bomb = ((Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::BOMBS_AND_BOMBERS) ||
+							(Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::ONLY_BOMBS));
+		bool target_bomber = ((Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::BOMBS_AND_BOMBERS) ||
+				(Target_bomb_or_bomber_behavior == TargetBomborBomberBehaviorOptions::ONLY_BOMBERS));
+		hud_target_hostile_bomb_or_bomber(Player_obj, 0, target_bomb, target_bomber, Target_bomb_or_bomber_use_distance);
+	}
 			break;
 
 		// wingman message: attack current target

@@ -4,9 +4,11 @@
 
 #include "iff_defs/iff_defs.h"
 #include "mission/missionmessage.h"
+#include "missioneditor/common.h"
 #include "mission/object.h"
 
 #include <globalincs/linklist.h>
+#include <ship/ship.h>
 #include <ui/util/SignalBlockers.h>
 
 #include <QCloseEvent>
@@ -20,6 +22,14 @@ ShipEditorDialog::ShipEditorDialog(FredView* parent, EditorViewport* viewport)
 {
 	this->setFocus();
 	ui->setupUi(this);
+
+	ui->HelpTitle->setVisible(viewport->Show_sexp_help_ship_editor);
+	ui->helpText->setVisible(viewport->Show_sexp_help_ship_editor);
+
+	ui->shipNameEdit->setMaxLength(NAME_LENGTH - 1);
+	ui->shipDisplayNameEdit->setMaxLength(NAME_LENGTH - 1);
+	ui->altNameCombo->lineEdit()->setMaxLength(NAME_LENGTH - 1);
+	ui->callsignCombo->lineEdit()->setMaxLength(CALLSIGN_LEN);
 
 	connect(_model.get(), &AbstractDialogModel::modelChanged, this, [this] { updateUI(false); });
 	connect(this, &QDialog::accepted, _model.get(), &ShipEditorDialogModel::apply);
@@ -98,7 +108,8 @@ void ShipEditorDialog::on_initialOrdersButton_clicked()
 
 void ShipEditorDialog::on_tblInfoButton_clicked()
 {
-	auto dialog = new dialogs::ShipTBLViewer(this, _viewport, getShipClass());
+	auto dialog = new TableViewerDialog(this, _viewport, "Ship TBL Data",
+	                                     "ships.tbl", "*-shp.tbm", Ship_info[getShipClass()].name);
 	dialog->setAttribute(Qt::WA_DeleteOnClose);
 	dialog->show();
 }
@@ -261,9 +272,9 @@ void ShipEditorDialog::updateArrival(bool overwrite)
 		for (restrict_to_players = 0; restrict_to_players < 2; restrict_to_players++) {
 			for (size_t j = 0; j < Iff_info.size(); j++) {
 				char tmp[NAME_LENGTH + 15];
-				stuff_special_arrival_anchor_name(tmp, static_cast<int>(j), restrict_to_players, 0);
+				stuff_special_arrival_anchor_name(tmp, static_cast<int>(j), restrict_to_players, false);
 
-				ui->arrivalTargetCombo->addItem(tmp, QVariant(get_special_anchor(tmp)));
+				ui->arrivalTargetCombo->addItem(tmp, QVariant(get_special_anchor(tmp).value()));
 			}
 		}
 		// Add All Ships

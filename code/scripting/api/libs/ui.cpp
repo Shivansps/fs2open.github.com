@@ -719,7 +719,7 @@ ADE_FUNC(initBriefing,
 {
 	SCP_UNUSED(L);
 
-	brief_api_init();
+	brief_init(true);
 
 	return ADE_RETURN_NIL;
 }
@@ -732,7 +732,7 @@ ADE_FUNC(closeBriefing,
 	nullptr)
 {
 	SCP_UNUSED(L);
-	brief_api_close();
+	brief_close(true);
 	return ADE_RETURN_NIL;
 }
 
@@ -804,7 +804,7 @@ ADE_FUNC(skipTraining,
 	// tricky part.  Need to move to the next mission in the campaign.
 	mission_goal_mark_objectives_complete();
 	mission_goal_fail_incomplete();
-	mission_campaign_store_goals_and_events_and_variables();
+	mission_campaign_store_goals_and_events_and_variables(false);
 
 	mission_campaign_eval_next_mission();
 	mission_campaign_mission_over();
@@ -964,7 +964,7 @@ ADE_FUNC(drawBriefingMap,
 	bscreen.map_y2 = y1 + y2;
 	bscreen.resize = GR_RESIZE_NONE;
 
-	brief_api_do_frame(flRealframetime);
+	brief_do_frame(flRealframetime, true);
 
 	return ADE_RETURN_NIL;
 }

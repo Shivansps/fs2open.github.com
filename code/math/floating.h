@@ -16,6 +16,8 @@
 #include <cfloat>
 #include <limits>
 
+#include "globalincs/pstypes.h"		// for PI
+
 extern float frand();
 extern int rand_chance(float frametime, float chance = 1.0f);
 float frand_range(float min, float max);
@@ -32,9 +34,11 @@ inline bool fl_is_nan(float fl) {
 #define fl_abs(fl) fabsf(fl)
 #define i2fl(i) (static_cast<float>(i))                                     // int to float
 #define i2ch(i) (static_cast<char>(i))                                      // int to char
+#define i2sz(i) (static_cast<size_t>(i))                                    // int to size_t
 #define l2d(l) (static_cast<double>(l))                                     // long to double
 #define fl2i(fl) (static_cast<int>(fl))                                     // float to int
 #define ch2i(ch) (static_cast<int>(ch))                                     // char to int
+#define sz2i(sz) (static_cast<int>(sz))                                     // size_t to int
 #define d2l(d) (static_cast<long>(d))                                       // double to long
 #define fl2ir(fl) (static_cast<int>(fl + (((fl) < 0.0f) ? -0.5f : 0.5f)))   // float to int, rounding
 #define d2lr(d) (static_cast<long>(d + (((d) < 0.0) ? -0.5 : 0.5)))         // double to long, rounding
@@ -48,6 +52,20 @@ inline bool fl_is_nan(float fl) {
 
 // convert a measurement in radians to degrees
 #define fl_degrees(fl)	(static_cast<float>((fl) * (180.0f / PI)))
+
+constexpr float DEGREE_UB = 359.99f;	// upper bound in degrees when rounding to 100ths place
+
+// convert a measurement in radians to degrees, rounding to the nearest .01 (used in FRED)
+constexpr float fl_degrees_100ths(float fl)
+{
+	float val = fl_degrees(fl);
+
+	float new_val = fl2ir(val * 100.0f) / 100.0f;
+	if (new_val > DEGREE_UB)
+		new_val -= 360.0f;
+
+	return new_val;
+}
 
 // sees if a floating point number is within a certain threshold (by default, epsilon) of zero
 inline bool fl_near_zero(float a, float e = std::numeric_limits<float>::epsilon())

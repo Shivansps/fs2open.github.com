@@ -822,7 +822,10 @@ void opengl_tnl_set_model_material(model_material *material_info)
 	opengl_tnl_set_material(material_info, false, false);
 
 	if ( GL_state.CullFace() ) {
-		GL_state.FrontFaceValue(GL_CW);
+		// Model rendering uses CW front faces in the default backbuffer path.
+		// Render-to-texture flips the projection vertically, which flips winding,
+		// so we must invert the front-face definition there.
+		GL_state.FrontFaceValue(gr_screen.rendering_to_texture != -1 ? GL_CCW : GL_CW);
 	}
 
 	gr_set_center_alpha(material_info->get_center_alpha());
@@ -871,7 +874,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 		//No shader ever defines this, so don't push it.
 		//Current_shader->program->Uniforms.setTextureUniform("sHeightmap", 5);
 
-		if (material_info->get_texture_map(TM_BASE_TYPE) > 0) {
+		if (material_info->get_texture_map(TM_BASE_TYPE) >= 0) {
 			gr_opengl_tcache_set(material_info->get_texture_map(TM_BASE_TYPE),
 				TCACHE_TYPE_NORMAL,
 				&u_scale,
@@ -880,7 +883,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 				0);
 		}
 
-		if (material_info->get_texture_map(TM_GLOW_TYPE) > 0) {
+		if (material_info->get_texture_map(TM_GLOW_TYPE) >= 0) {
 			gr_opengl_tcache_set(material_info->get_texture_map(TM_GLOW_TYPE),
 				TCACHE_TYPE_NORMAL,
 				&u_scale,
@@ -889,9 +892,9 @@ void opengl_tnl_set_model_material(model_material *material_info)
 				1);
 		}
 
-		if (material_info->get_texture_map(TM_SPECULAR_TYPE) > 0 ||
-			material_info->get_texture_map(TM_SPEC_GLOSS_TYPE) > 0) {
-			if (material_info->get_texture_map(TM_SPEC_GLOSS_TYPE) > 0) {
+		if (material_info->get_texture_map(TM_SPECULAR_TYPE) >= 0 ||
+			material_info->get_texture_map(TM_SPEC_GLOSS_TYPE) >= 0) {
+			if (material_info->get_texture_map(TM_SPEC_GLOSS_TYPE) >= 0) {
 				gr_opengl_tcache_set(material_info->get_texture_map(TM_SPEC_GLOSS_TYPE),
 					TCACHE_TYPE_NORMAL,
 					&u_scale,
@@ -908,7 +911,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 			}
 		}
 
-		if (material_info->get_texture_map(TM_NORMAL_TYPE) > 0) {
+		if (material_info->get_texture_map(TM_NORMAL_TYPE) >= 0) {
 			gr_opengl_tcache_set(material_info->get_texture_map(TM_NORMAL_TYPE),
 				TCACHE_TYPE_NORMAL,
 				&u_scale,
@@ -917,7 +920,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 				4);
 		}
 
-		if (material_info->get_texture_map(TM_HEIGHT_TYPE) > 0) {
+		if (material_info->get_texture_map(TM_HEIGHT_TYPE) >= 0) {
 			gr_opengl_tcache_set(material_info->get_texture_map(TM_HEIGHT_TYPE),
 				TCACHE_TYPE_NORMAL,
 				&u_scale,
@@ -926,7 +929,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 				5);
 		}
 
-		if (material_info->get_texture_map(TM_AMBIENT_TYPE) > 0) {
+		if (material_info->get_texture_map(TM_AMBIENT_TYPE) >= 0) {
 			gr_opengl_tcache_set(material_info->get_texture_map(TM_AMBIENT_TYPE),
 				TCACHE_TYPE_NORMAL,
 				&u_scale,
@@ -935,7 +938,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 				6);
 		}
 
-		if (material_info->get_texture_map(TM_MISC_TYPE) > 0) {
+		if (material_info->get_texture_map(TM_MISC_TYPE) >= 0) {
 			gr_opengl_tcache_set(material_info->get_texture_map(TM_MISC_TYPE),
 				TCACHE_TYPE_NORMAL,
 				&u_scale,
@@ -948,7 +951,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 			GL_state.Texture.Enable(8, GL_TEXTURE_2D_ARRAY, Shadow_map_texture);
 		}
 
-		if (material_info->get_animated_effect() > 0) {
+		if (material_info->get_animated_effect() >= 0) {
 			if (Scene_framebuffer_in_frame) {
 				GL_state.Texture.Enable(9, GL_TEXTURE_2D, Scene_composite_texture);
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);

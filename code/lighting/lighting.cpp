@@ -111,6 +111,7 @@ static void parse_deferred_lighting_func()
 	DeferredLightingEnabled = enabled;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto DeferredLightingOption = options::OptionBuilder<bool>("Graphics.DeferredLighting",
                   std::pair<const char*, int>{"Deferred Lighting", 1782},
                   std::pair<const char*, int>{"Enables or disables deferred lighting", 1783})
@@ -131,6 +132,7 @@ static void parse_deferredcockpit_lighting_func()
 	DeferredCockpitLightingEnabled = enabled;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto DeferredCockpitLightingOption = options::OptionBuilder<bool>("Graphics.DeferredCockpitLighting",
                   std::pair<const char*, int>{"Deferred Cockpit Lighting", 1864},
                   std::pair<const char*, int>{"Enables or disables deferred lighting in cockpits (requires Deferred Lighting to be enabled)", 1865})

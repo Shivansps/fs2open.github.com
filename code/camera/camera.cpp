@@ -73,6 +73,7 @@ static void parse_fov_func()
 	fov_default = value;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto FovOption = options::OptionBuilder<float>("Graphics.FOV",
 					 std::pair<const char*, int>{"Field Of View", 1703},
 					 std::pair<const char*, int>{"The vertical field of view", 1704})
@@ -91,6 +92,7 @@ auto FovOption = options::OptionBuilder<float>("Graphics.FOV",
 
 bool Use_cockpit_fov = false;
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto CockpitFOVToggleOption = options::OptionBuilder<bool>("Graphics.CockpitFOVToggle",
 					 std::pair<const char*, int>{"Cockpit FOV Toggle", 1838},
 					 std::pair<const char*, int>{"Whether or not to use a different FOV for cockpit rendering from normal rendering", 1839})
@@ -107,6 +109,7 @@ auto CockpitFOVToggleOption = options::OptionBuilder<bool>("Graphics.CockpitFOVT
 					 .importance(61)
 					 .finish();
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto CockpitFovOption = options::OptionBuilder<float>("Graphics.CockpitFOV",
 					 std::pair<const char*, int>{"Cockpit Field Of View", 1840},
 					 std::pair<const char*, int>{"The vertical field of view for cockpit rendering. Only works if cockpits are active and cockpit FOV toggle is turned on.", 1841})
@@ -732,6 +735,7 @@ subtitle::subtitle(int in_x_pos, int in_y_pos, const char* in_text, const char* 
 		text_buf = in_text;
 		sexp_replace_variable_names_with_values(text_buf);
 		sexp_container_replace_refs_with_values(text_buf);
+		// (message_translate_tokens is called when the subtitle is queued, so does not need to be called here)
 		in_text = text_buf.c_str();
 	}
 

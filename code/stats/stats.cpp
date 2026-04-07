@@ -18,6 +18,7 @@
 #include "stats/stats.h"
 
 static const scoring_struct *Player_stats;
+// coverity[GLOBAL_INIT_ORDER] -- safe; default-constructed, no cross-TU dependencies
 static scoring_struct All_time_ever_stats;
 
 void show_stats_init()

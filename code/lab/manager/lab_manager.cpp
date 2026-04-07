@@ -11,6 +11,7 @@
 #include "ship/ship.h"
 #include "ship/shipfx.h"
 #include "particle/particle.h"
+#include "prop/prop.h"
 #include "weapon/muzzleflash.h"
 #include "weapon/beam.h"
 #include "ai/aigoals.h"
@@ -45,6 +46,7 @@ LabManager::LabManager() {
 	debris_init();
 	extern void debris_page_in();
 	debris_page_in();
+	props_level_init();
 	asteroid_level_init();
 	shockwave_level_init();
 	ship_level_init();
@@ -121,9 +123,13 @@ void LabManager::onFrame(float frametime) {
 
 	int key = game_check_key();
 
-	int dx, dy;
+	int dx, dy, dz;
 	mouse_get_delta(&dx, &dy);
-	Renderer->getCurrentCamera()->handleInput(dx, dy, mouse_down(MOUSE_LEFT_BUTTON) != 0, mouse_down(MOUSE_RIGHT_BUTTON) != 0, key_get_shift_status());
+	mouse_get_wheel_delta(nullptr, &dz);
+	if (dz != 0 && ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+		dz = 0;
+	}
+	Renderer->getCurrentCamera()->handleInput(dx, dy, dz, mouse_down(MOUSE_LEFT_BUTTON) != 0, mouse_down(MOUSE_RIGHT_BUTTON) != 0, key_get_shift_status());
 
 	if (!Renderer->getCurrentCamera()->handlesObjectPlacement()) {
 		if (mouse_down(MOUSE_LEFT_BUTTON)) {
@@ -158,6 +164,12 @@ void LabManager::onFrame(float frametime) {
 
 			vm_angles_2_matrix(&CurrentOrientation, &rot_angle);
 		}
+	}
+
+	if (CurrentMode == LabMode::Ship) {
+		Lab_thrust_afterburn = check_control(AFTERBURNER) != 0;
+	} else {
+		Lab_thrust_afterburn = false;
 	}
 
 	if (key != 0) {
@@ -217,15 +229,15 @@ void LabManager::onFrame(float frametime) {
 		default:
 			// check for game-specific controls
 			if (CurrentMode == LabMode::Ship) {
-				if (check_control(PLUS_5_PERCENT_THROTTLE, key))
+				// These don't work because the lab is a lie and ships don't actually move
+				// Also the ships are AI and don't really respond to player input anyway so
+				// getting these working will be tricky
+				/*if (check_control(PLUS_5_PERCENT_THROTTLE, key))
 					Lab_thrust_len += 0.05f;
 				else if (check_control(MINUS_5_PERCENT_THROTTLE, key))
 					Lab_thrust_len -= 0.05f;
 
-				CLAMP(Lab_thrust_len, 0.0f, 1.0f);
-
-				if (check_control(AFTERBURNER, key))
-					Lab_thrust_afterburn = !Lab_thrust_afterburn;
+				CLAMP(Lab_thrust_len, 0.0f, 1.0f);*/
 			}
 			break;
 		}
@@ -233,6 +245,9 @@ void LabManager::onFrame(float frametime) {
 
 	float rev_rate;
 	ship_info* sip = nullptr;
+
+	// First delete any dead objects so we don't end up processing them
+	obj_delete_all_that_should_be_dead();
 
 	if (CurrentObject != -1 && (Objects[CurrentObject].type == OBJ_SHIP)) {
 		sip = &Ship_info[Ships[Objects[CurrentObject].instance].ship_info_index];
@@ -413,6 +428,10 @@ void LabManager::cleanup() {
 
 		// Remove all objects
 		obj_delete_all();
+
+		// Reset large-ship split explosion state. In the lab we can delete exploding ships while
+		// cycling classes, so clear any lingering Split_ships entries tied to the previous view.
+		shipfx_large_blowup_level_init();
 
 		// Clean up the particles
 		particle::kill_all();
@@ -746,6 +765,12 @@ void LabManager::changeDisplayedObject(LabMode mode, int info_index, int subtype
 			// 1: Allow subsystem rotations/translations
 			// 2: Allow subystems to be processed
 			ai_add_ship_goal_scripting(AI_GOAL_PLAY_DEAD_PERSISTENT, -1, 100, nullptr, &Ai_info[Player_ship->ai_index], 0, 0);
+		}
+		break;
+	case LabMode::Prop:
+		CurrentObject = prop_create(&CurrentOrientation, &CurrentPosition, CurrentClass);
+		if (isSafeForProps()) {
+			ModelFilename = Prop_info[CurrentClass].pof_file;
 		}
 		break;
 	case LabMode::Weapon:

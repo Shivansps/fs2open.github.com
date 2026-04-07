@@ -340,18 +340,16 @@ auto ParticleEffect::processSourceInternal(float interp, const ParticleSource& s
 		Assertion(bm_is_valid(info.bitmap), "Invalid bitmap handle passed to particle create.");
 		bm_get_info(info.bitmap, nullptr, nullptr, nullptr, &info.nframes, &fps);
 
-		if (m_hasLifetime) {
-			if (m_keep_anim_length_if_available && info.nframes > 1) {
-				// Recalculate max life for ani's
-				info.max_life = i2fl(info.nframes) / i2fl(fps);
-			}
-			else {
-				if (m_parentLifetime)
-					// if we were spawned by a particle, parentLifetime is the parent's remaining lifetime and m_lifetime is a factor of that
-					info.max_life = parentLifetime * m_lifetime.next() * lifetimeMultiplier;
-				else
-					info.max_life = m_lifetime.next() * lifetimeMultiplier;
-			}
+		if (!m_hasLifetime || (m_keep_anim_length_if_available && info.nframes > 1)) {
+			// Recalculate max life for ani's
+			info.max_life = i2fl(info.nframes) / i2fl(fps);
+		}
+		else {
+			if (m_parentLifetime)
+				// if we were spawned by a particle, parentLifetime is the parent's remaining lifetime and m_lifetime is a factor of that
+				info.max_life = parentLifetime * m_lifetime.next() * lifetimeMultiplier;
+			else
+				info.max_life = m_lifetime.next() * lifetimeMultiplier;
 		}
 		
 		info.age = interp * f2fl(Frametime);
@@ -418,13 +416,17 @@ void ParticleEffect::pageIn() {
 	}
 }
 
-std::pair<TIMESTAMP, TIMESTAMP> ParticleEffect::getEffectDuration() const {
+std::pair<TIMESTAMP, TIMESTAMP> ParticleEffect::getEffectDuration(float interp, const ParticleSource& source, size_t effectNumber) const {
 	std::pair<TIMESTAMP, TIMESTAMP> timing;
 	timing.first = _timestamp(fl2i(m_delayRange.next() * 1000.0f));
 	if (m_duration == Duration::ALWAYS)
 		timing.second = TIMESTAMP::never();
-	else
-		timing.second = timestamp_delta(timing.first, fl2i(m_durationRange.next() * 1000.0f));
+	else {
+		const auto& [pos, hostOrientation] = source.m_host->getPositionAndOrientation(m_parent_local, interp, m_manual_offset);
+		auto modularCurvesInput = std::forward_as_tuple(source, effectNumber, pos);
+
+		timing.second = timestamp_delta(timing.first, fl2i(m_durationRange.next() * 1000.0f * m_modular_curves.get_output(ParticleCurvesOutput::SOURCE_DURATION_MULT, modularCurvesInput)));
+	}
 	return timing;
 }
 

@@ -3677,6 +3677,14 @@ void ai_form_on_wing(object *objp, object *goal_objp)
 	aip->ai_flags.remove(AI::AI_Flags::Formation_wing);
 	aip->ai_flags.set(AI::AI_Flags::Formation_object);
 
+	// if this goal is going to stick around for a while, change the mode
+	if (The_mission.ai_profile->flags[AI::Profile_Flags::Do_not_clear_goals_when_running_form_on_wing])
+	{
+		aip->mode = AIM_NONE;
+		aip->submode = -1;
+		aip->submode_start_time = Missiontime;
+	}
+
 	aip->goal_objnum = OBJ_INDEX(goal_objp);
 
 	ai_formation_object_recalculate_slotnums(aip->goal_objnum);
@@ -13697,7 +13705,7 @@ int ai_acquire_emerge_path(object *pl_objp, int parent_objnum, int allowed_path_
 	ship_info* parent_sip = &Ship_info[parent_shipp->ship_info_index];
 
 	polymodel *pm = model_get( parent_sip->model_num );
-	ship_bay *bay = pm->ship_bay;
+	const auto& bay = pm->ship_bay;
 
 	if ( bay == nullptr ) {
 		Warning(LOCATION, "Ship %s was set to arrive from fighter bay on object %s, but no fighter bay exists on that ships' model (%s).\n", shipp->ship_name, parent_shipp->ship_name, pm->filename);
@@ -13912,9 +13920,8 @@ int ai_find_closest_depart_path(ai_info *aip, polymodel *pm, int allowed_path_ma
 	float		dist, min_dist, min_free_dist;
 	vec3d		*source;
 	model_path	*mp;
-	ship_bay	*bay;
 
-	bay = pm->ship_bay;
+	const auto& bay = pm->ship_bay;
 
 	best_free_path = best_path = -1;
 	min_free_dist = min_dist = 1e20f;
@@ -13991,9 +13998,9 @@ int ai_acquire_depart_path(object *pl_objp, int parent_objnum, int allowed_path_
 
 	object *parent_objp = &Objects[parent_objnum];
 	polymodel *pm = model_get(Ship_info[Ships[parent_objp->instance].ship_info_index].model_num );
-	ship_bay *bay = pm->ship_bay;
+	const auto& bay = pm->ship_bay;
 
-	if ( bay == NULL ) 
+	if ( bay == nullptr )
 		return -1;
 	if ( bay->num_paths <= 0 ) 
 		return -1;
@@ -14052,7 +14059,7 @@ void ai_bay_depart()
 
 	// check if parent ship valid; if not, abort depart
 	if (gameseq_get_state() != GS_STATE_LAB) {
-		auto anchor_ship_entry = ship_registry_get(Parse_names[Ships[Pl_objp->instance].departure_anchor]);
+		auto anchor_ship_entry = ship_registry_get(Ships[Pl_objp->instance].departure_anchor);
 		if (!anchor_ship_entry ||
 			!ship_useful_for_departure(anchor_ship_entry->shipnum, Ships[Pl_objp->instance].departure_path_mask)) {
 			mprintf(("Aborting bay departure!\n"));
@@ -14084,11 +14091,10 @@ void ai_bay_depart()
 
 		// Volition bay code
 		polymodel	*pm;
-		ship_bay	*bay;
 
 		pm = model_get(Ship_info[Ships[Objects[aip->goal_objnum].instance].ship_info_index].model_num);
-		bay = pm->ship_bay;
-		if ( bay != NULL ) {
+		const auto& bay = pm->ship_bay;
+		if ( bay != nullptr ) {
 			bay->depart_flags &= ~(1<<aip->submode_parm0);
 		}
 
@@ -14377,7 +14383,7 @@ int maybe_request_support(object *objp)
 		try_to_rearm = true;
 	} else if (ai_bad_time_to_rearm(objp)) {
 		try_to_rearm = false;
-	} else if (num_allies_rearming(objp) < 2) {
+	} else if (num_allies_rearming(objp) < The_mission.ai_profile->max_allies_rearming_threshold) {
 		if (desire >= 8) {	//	guarantees disabled will cause repair request
 			try_to_rearm = true;
 		} else if (desire >= 3) {		//	>= 3 means having a single subsystem fully blown will cause repair.

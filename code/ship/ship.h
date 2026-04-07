@@ -7,12 +7,8 @@
  *
 */
 
-
-
 #ifndef _SHIP_H
 #define _SHIP_H
-
-
 
 #include "ai/ai.h"
 #include "fireball/fireballs.h"
@@ -29,6 +25,7 @@
 #include "species_defs/species_defs.h"
 #include "weapon/shockwave.h"
 #include "weapon/trails.h"
+#include "ship/anchor_t.h"
 #include "ship/ship_flags.h"
 #include "weapon/weapon_flags.h"
 #include "weapon/weapon.h"
@@ -587,8 +584,6 @@ public:
 	// END PACK
 
 	int	final_death_time;				// Time until big fireball starts
-	int	death_time;				// Time until big fireball starts
-	int	end_death_time;				// Time until big fireball starts
 	int	really_final_death_time;	// Time until ship breaks up and disappears
 	vec3d	deathroll_rotvel;			// Desired death rotational velocity
 
@@ -635,13 +630,13 @@ public:
 
 	ArrivalLocation arrival_location;
 	int	arrival_distance;		// how far away this ship should arrive
-	int	arrival_anchor;			// name of object this ship arrives near (or in front of)
+	anchor_t arrival_anchor;		// ship registry index of object this ship arrives near (or in front of)
 	int	arrival_path_mask;		// Goober5000 - possible restrictions on which bay paths to use
 	int	arrival_cue;
 	int	arrival_delay;
 
 	DepartureLocation departure_location;	// depart to hyperspace or someplace else (like docking bay)
-	int	departure_anchor;		// when docking bay -- index of ship to use
+	anchor_t departure_anchor;		// when docking bay -- ship registry index of ship to use
 	int departure_path_mask;	// Goober5000 - possible restrictions on which bay paths to use
 	int	departure_cue;			// sexpression to eval when departing
 	int	departure_delay;		// time in seconds after sexp is true that we delay.
@@ -701,6 +696,7 @@ public:
 	int swarm_missile_bank;				// The missilebank the swarm was originally launched from
 
 	int	group;								// group ship is in, or -1 if none.  Fred thing
+	SCP_string fred_layer = "Default";		// FRED view layer assignment
 	sound_handle death_roll_snd;            // id of death roll sound, may need to be stopped early
 	int	ship_list_index;					// index of ship in Ship_objs[] array
 
@@ -956,6 +952,8 @@ struct ship_registry_entry
 	p_object* p_objp_or_null() const;
 	object* objp_or_null() const;
 	ship* shipp_or_null() const;
+
+	ship_info* sip() const;
 };
 
 extern SCP_vector<ship_registry_entry> Ship_registry;
@@ -965,8 +963,11 @@ extern int ship_registry_get_index(const char *name);
 extern int ship_registry_get_index(const SCP_string &name);
 extern bool ship_registry_exists(const char *name);
 extern bool ship_registry_exists(const SCP_string &name);
+extern bool ship_registry_exists(int index);
 extern const ship_registry_entry *ship_registry_get(const char *name);
 extern const ship_registry_entry *ship_registry_get(const SCP_string &name);
+extern const ship_registry_entry *ship_registry_get(int index);
+extern const ship_registry_entry *ship_registry_get(anchor_t anchor);
 
 #define REGULAR_WEAPON	(1<<0)
 #define DOGFIGHT_WEAPON (1<<1)
@@ -1146,7 +1147,7 @@ class ship_info
 {
 public:
 	char		name[NAME_LENGTH];				// name for the ship
-	char		display_name[NAME_LENGTH];		// display another name for the ship
+	SCP_string	display_name;					// display another name for the ship
 	char		short_name[NAME_LENGTH];		// short name, for use in the editor?
 	int			species;								// which species this craft belongs to
 	int			class_type;						//For type table
@@ -1429,9 +1430,6 @@ public:
 
 	bool		draw_distortion;
 
-	int splodeing_texture;
-	char splodeing_texture_name[MAX_FILENAME_LEN];
-
 	// Goober5000
 	SCP_vector<texture_replace> replacement_textures;
 
@@ -1450,6 +1448,7 @@ public:
 	float bank_autoaim_fov[MAX_SHIP_PRIMARY_BANKS];
 
 	bool aims_at_flight_cursor;
+	bool aims_at_flight_cursor_secondary;
 	float flight_cursor_aim_extent;
 
 	bool topdown_offset_def;
@@ -1596,13 +1595,13 @@ typedef struct wing {
 
 	ArrivalLocation arrival_location;			// arrival and departure information for wings -- similar to info for ships
 	int	arrival_distance;						// distance from some ship where this ship arrives
-	int	arrival_anchor;						// name of object this ship arrives near (or in front of)
+	anchor_t arrival_anchor;						// ship registry index of object this wing arrives near (or in front of)
 	int	arrival_path_mask;					// Goober5000 - possible restrictions on which bay paths to use
 	int	arrival_cue;
 	int	arrival_delay;
 
 	DepartureLocation departure_location;
-	int	departure_anchor;						// name of object that we depart to (in case of dock bays)
+	anchor_t departure_anchor;						// ship registry index of object that we depart to (in case of dock bays)
 	int departure_path_mask;				// Goober5000 - possible restrictions on which bay paths to use
 	int	departure_cue;
 	int	departure_delay;
@@ -1825,6 +1824,7 @@ extern void ship_subsys_set_disrupted(ship_subsys *ss, int time);
 extern int	ship_do_rearm_frame( object *objp, float frametime );
 extern float ship_calculate_rearm_duration( object *objp );
 extern void	ship_wing_cleanup( int shipnum, wing *wingp );
+extern void wing_maybe_cleanup( wing *wingp, int team = -1 );
 
 extern int ship_find_repair_ship( object *requester_obj, object **ship_we_found = NULL );
 extern void ship_close();	// called in game_shutdown() to free malloced memory
@@ -2016,7 +2016,7 @@ extern void ship_subsystem_set_new_ai_class(ship_subsys *ss, int new_ai_class);
 extern void wing_load_squad_bitmap(wing *w);
 
 // Goober5000 - needed by new hangar depart code
-extern bool ship_has_dock_bay(int shipnum);
+extern bool ship_has_hangar_bay(int shipnum);
 extern bool ship_useful_for_departure(int shipnum, int path_mask = 0);
 extern int ship_get_ship_for_departure(int team);
 

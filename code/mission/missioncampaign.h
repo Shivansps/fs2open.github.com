@@ -116,7 +116,7 @@ class campaign
 public:
 	char	name[NAME_LENGTH];						// name of the campaign
 	char	filename[CF_MAX_PATHNAME_LENGTH];			// filename the campaign info is in
-	char	*desc;									// description of campaign
+	SCP_string description;                         // unlimited length description of campaign
 	int		type;									// type of campaign
 	int		flags;									// flags - Goober5000
 	int		num_missions;							// number of missions in the campaign
@@ -139,7 +139,7 @@ public:
 	SCP_map<SCP_string, SCP_string> custom_data;        // Custom data for the campaign
 
 	campaign()
-		: desc(nullptr), num_missions(0)
+		: num_missions(0)
 	{
 		name[0] = 0;
 		filename[0] = 0;
@@ -226,13 +226,13 @@ int mission_load_up_campaign(bool fall_back_from_current = false);
 void mission_campaign_store_goals_and_events();
 
 // stores variables which will be saved only on mission progression
-void mission_campaign_store_variables(int persistence_type, bool store_red_alert = true);
+void mission_campaign_store_variables(int persistence_type, bool store_red_alert);
 
 // stores containers which will be saved only on mission progression
-void mission_campaign_store_containers(ContainerType persistence_type, bool store_red_alert = true);
+void mission_campaign_store_containers(ContainerType persistence_type, bool store_red_alert);
 
 // does all three of the above
-void mission_campaign_store_goals_and_events_and_variables();
+void mission_campaign_store_goals_and_events_and_variables(bool store_red_alert_data);
 
 // evaluates next mission and possible loop mission
 void mission_campaign_eval_next_mission();
@@ -247,18 +247,15 @@ void mission_campaign_skip_to_next();
 void mission_campaign_exit_loop();
 
 // jump to specified mission
-bool mission_campaign_jump_to_mission(const char* filename, bool no_skip = false);
+bool mission_campaign_jump_to_mission(const char* filename, bool no_skip = false, bool preserve_loadout = false);
+
+// get a list of all valid next missions in the campaign
+SCP_vector<SCP_string> mission_campaign_get_valid_next_missions();
 
 // stuff for the end of the campaign of the single player game
 void mission_campaign_end_init();
 void mission_campaign_end_close();
 void mission_campaign_end_do();
-
-// save eternal variables
-extern void mission_campaign_save_on_close_variables();
-
-// save eternal containers
-extern void mission_campaign_save_on_close_containers();
 
 extern void mission_campaign_load_failure_popup();
 

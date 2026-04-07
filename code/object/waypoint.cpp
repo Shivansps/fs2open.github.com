@@ -96,6 +96,9 @@ void waypoint::set_pos(const vec3d *pos)
 waypoint_list::waypoint_list()
 {
 	this->m_name[0] = '\0';
+	this->m_no_draw_lines = false;
+	this->m_has_custom_color = false;
+	this->m_color_r = this->m_color_g = this->m_color_b = 255;
 }
 
 waypoint_list::waypoint_list(const char *name)
@@ -103,6 +106,9 @@ waypoint_list::waypoint_list(const char *name)
 	Assert(name != NULL);
 	Assert(find_matching_waypoint_list(name) == NULL);
 	strcpy_s(this->m_name, name);
+	this->m_no_draw_lines = false;
+	this->m_has_custom_color = false;
+	this->m_color_r = this->m_color_g = this->m_color_b = 255;
 }
 
 waypoint_list::~waypoint_list()
@@ -127,13 +133,63 @@ SCP_vector<waypoint> &waypoint_list::get_waypoints()
 
 void waypoint_list::set_name(const char *name)
 {
-	Assert(name != NULL);
-	strcpy_s(this->m_name, name);
+	Assertion(name != nullptr, "Waypoint name cannot be null!");
+
+	auto len = strlen(name);
+	if (len >= NAME_LENGTH)
+		len = NAME_LENGTH - 5;	// leave room for a colon, three digits, and a null terminator for points that belong to this list
+
+	strncpy(this->m_name, name, len);
+	this->m_name[len] = '\0';
+}
+
+void waypoint_list::set_no_draw_lines(bool val)
+{
+	m_no_draw_lines = val;
+}
+
+void waypoint_list::set_color(int r, int g, int b)
+{
+	m_color_r = r;
+	m_color_g = g;
+	m_color_b = b;
+	m_has_custom_color = true;
+}
+
+void waypoint_list::clear_color()
+{
+	m_has_custom_color = false;
+}
+
+bool waypoint_list::get_no_draw_lines() const
+{
+	return m_no_draw_lines;
+}
+
+bool waypoint_list::get_has_custom_color() const
+{
+	return m_has_custom_color;
+}
+
+int waypoint_list::get_color_r() const
+{
+	return m_color_r;
+}
+
+int waypoint_list::get_color_g() const
+{
+	return m_color_g;
+}
+
+int waypoint_list::get_color_b() const
+{
+	return m_color_b;
 }
 
 //********************FUNCTIONS********************
 void waypoint_level_close()
 {
+	// Clear all waypoint lists and all their waypoints.  Note that this can happen either before or after objects are cleaned up.
 	Waypoint_lists.clear();
 }
 
@@ -385,6 +441,50 @@ void waypoint_find_unique_name(char *dest_name, int start_index)
 		// valid name if no collision
 		collision = find_matching_waypoint_list(dest_name);
 	} while (collision != NULL);
+}
+
+void waypoint_stuff_name(char *dest, const char *waypoint_list_name, int waypoint_num)
+{
+	constexpr size_t name_max_len = NAME_LENGTH - 3 - 1 - 1;	// a colon, three digits, and a null terminator
+
+	if (waypoint_num < 1)
+	{
+		Error(LOCATION, "A waypoint number must be at least 1!");
+		*dest = 0;
+		return;
+	}
+	if (waypoint_num >= 1000)
+	{
+		Error(LOCATION, "This waypoint number has more than three digits!  If you actually need this, first convince a coder that you are sane and then ask for the limit to be increased.");
+		*dest = 0;
+		return;
+	}
+
+	auto name_len = std::min(strlen(waypoint_list_name), name_max_len);
+	strncpy(dest, waypoint_list_name, name_len);
+	sprintf(dest + name_len, ":%d", waypoint_num);
+}
+
+void waypoint_stuff_name(SCP_string &dest, const char *waypoint_list_name, int waypoint_num)
+{
+	constexpr size_t name_max_len = NAME_LENGTH - 3 - 1 - 1;	// a colon, three digits, and a null terminator
+
+	if (waypoint_num < 1)
+	{
+		Error(LOCATION, "A waypoint number must be at least 1!");
+		dest = "";
+		return;
+	}
+	if (waypoint_num >= 1000)
+	{
+		Error(LOCATION, "This waypoint number has more than three digits!  If you actually need this, first convince a coder that you are sane and then ask for the limit to be increased.");
+		dest = "";
+		return;
+	}
+
+	dest.assign(waypoint_list_name, std::min(strlen(waypoint_list_name), name_max_len));
+	dest += ":";
+	dest.append(std::to_string(waypoint_num));
 }
 
 void waypoint_add_list(const char *name, const SCP_vector<vec3d> &vec_list)

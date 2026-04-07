@@ -101,6 +101,9 @@ public:
 
 	float detail_distance_mult[MAX_DETAIL_VALUE + 1];	//MAX_DETAIL_VALUE really needs to be 4
 
+	// max number of allies allowed to be rearming at the same time
+	int max_allies_rearming_threshold;	
+
 	// minimum radius for the line-of-sight (los) detection --wookieejedi
 	float los_min_detection_radius;
 
@@ -147,6 +150,8 @@ public:
 	// AI attack any option --wookieejedi
 	float attack_any_idle_circle_distance; // Radius that AI circles around a point while waiting for new enemies in attack-any mode
 
+	int default_form_on_wing_priority;	// the priority used if not specified in the sexp
+
     void reset();
 };
 
@@ -159,6 +164,6 @@ extern ai_profile_t Ai_profiles[MAX_AI_PROFILES];
 
 void ai_profiles_init();
 
-int ai_profile_lookup(char *name);
+int ai_profile_lookup(const char *name);
 
 #endif

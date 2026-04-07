@@ -615,9 +615,8 @@ public:
 };
 
 struct indexed_vertex_source {
-	void* Vertex_list = nullptr;
-	void* Index_list = nullptr;
-
+	std::shared_ptr<uint8_t[]> Vertex_list = nullptr;
+	std::shared_ptr<uint8_t[]> Index_list = nullptr;
 	gr_buffer_handle Vbuffer_handle;
 	size_t Vertex_offset = 0;
 	size_t Base_vertex_offset = 0;
@@ -1073,6 +1072,8 @@ extern void gr_activate(int active);
 #define gr_print_screen		GR_CALL(gr_screen.gf_print_screen)
 #define gr_blob_screen		GR_CALL(gr_screen.gf_blob_screen)
 #define gr_dump_envmap		GR_CALL(gr_screen.gf_dump_envmap)
+
+void gr_request_screenshot(const char* filename);
 
 //#define gr_flip				GR_CALL(gr_screen.gf_flip)
 void gr_flip(bool execute_scripting = true);

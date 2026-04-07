@@ -177,6 +177,7 @@ static size_t Ds_active_env_idx = 0;
 
 bool Ingame_efx = false;
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto EnableEFXOption = options::OptionBuilder<bool>("Audio.EnableEFX",
                      std::pair<const char*, int>{"Use Audio EFX", 1832},
                      std::pair<const char*, int>{"Toggle whether OpenAL Audio EFX are used or not", 1833})

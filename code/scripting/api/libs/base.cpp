@@ -584,6 +584,24 @@ ADE_FUNC(replaceVariables,
 	return ade_set_args(L, "s", translated_str.c_str());
 }
 
+ADE_FUNC(replaceContainers,
+	l_Base,
+	"string text",
+	"Returns a string that replaces any container reference with the container value (same as text in Briefings, Debriefings, or Messages). Container ref must be preceded by '&' for replacement to work.",
+	"string",
+	"Updated string or nil if invalid")
+{
+	const char* untranslated_str;
+	if (!ade_get_args(L, "s", &untranslated_str)) {
+		return ADE_RETURN_NIL;
+	}
+
+	SCP_string translated_str = untranslated_str;
+	sexp_container_replace_refs_with_values(translated_str);
+
+	return ade_set_args(L, "s", translated_str.c_str());
+}
+
 ADE_FUNC(inMissionEditor, l_Base, nullptr, "Determine if the current script is running in the mission editor (e.g. FRED2). This should be used to control which code paths will be executed even if running in the editor.", "boolean", "true when we are in the mission editor, false otherwise") {
 	return ade_set_args(L, "b", Fred_running != 0);
 }
@@ -594,6 +612,14 @@ ADE_FUNC(inDebug, l_Base, nullptr, "Determines if FSO is running in Release or D
 	#else
 		return ADE_RETURN_FALSE;
 	#endif
+}
+
+ADE_FUNC(inStandalone, l_Base, nullptr, "Determines if FSO is running in Standalone mode or not", "boolean", "true if standalone, false otherwise") {
+	if (Is_standalone) {
+		return ADE_RETURN_TRUE;
+	} else {
+		return ADE_RETURN_FALSE;
+	}
 }
 
 ADE_FUNC(isEngineVersionAtLeast,

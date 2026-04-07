@@ -697,17 +697,17 @@ ADE_VIRTVAR(AltName, l_Shipclass, "string", "Alternate name for ship class", "st
 	if(idx < 0 || idx >= ship_info_size())
 		return ade_set_error(L, "s", "");
 
-	if(ADE_SETTING_VAR && newName != NULL) {
-		if (strlen(newName) >= NAME_LENGTH)
-		{
-			LuaError(L, "Cannot set alternate name value to '%s' because it is too long, maximum length is %d!", newName, NAME_LENGTH - 1);
-			return ade_set_error(L, "s", "");
+	if(ADE_SETTING_VAR && newName != nullptr) {
+		if (newName == Ship_info[idx].name) {
+			Ship_info[idx].display_name = "";
+			Ship_info[idx].flags.remove(Ship::Info_Flags::Has_display_name);
+		} else {
+			Ship_info[idx].display_name = newName;
+			Ship_info[idx].flags.set(Ship::Info_Flags::Has_display_name);
 		}
-
-		strcpy_s(Ship_info[idx].display_name, newName);
 	}
 
-	return ade_set_args(L, "s", Ship_info[idx].display_name);
+	return ade_set_args(L, "s", Ship_info[idx].display_name.c_str());
 }
 
 ADE_VIRTVAR(VelocityMax, l_Shipclass, "vector", "Ship's lateral and forward speeds", "vector", "Maximum velocity, or null vector if handle is invalid")
@@ -1158,7 +1158,7 @@ ADE_FUNC(renderTechModel,
 		}
 	}
 
-	return ade_set_args(L, "b", render_tech_model(TECH_SHIP, x1, y1, x2, y2, zoom, lighting, idx, &orient, tcolor));
+	return ade_set_args(L, "b", render_tech_model(TECH_SHIP, x1, y1, x2, y2, zoom, lighting, idx, &orient, "" , 0.0f, &vmd_zero_vector, tcolor));
 }
 
 // Nuke's alternate tech model rendering function
@@ -1191,7 +1191,7 @@ ADE_FUNC(renderTechModel2, l_Shipclass, "number X1, number Y1, number X2, number
 		}
 	}
 
-	return ade_set_args(L, "b", render_tech_model(TECH_SHIP, x1, y1, x2, y2, zoom, true, idx, orient, tcolor));
+	return ade_set_args(L, "b", render_tech_model(TECH_SHIP, x1, y1, x2, y2, zoom, true, idx, orient, "" , 0.0f, &vmd_zero_vector, tcolor));
 }
 
 ADE_FUNC(renderSelectModel,
@@ -1270,6 +1270,7 @@ ADE_FUNC(renderSelectModel,
 	params.fs2_wireframe_color = sip->fs2_effect_wireframe_color;
 
 	draw_model_rotating(&render_info,
+		idx,
 		modelNum,
 		x1,
 		y1,

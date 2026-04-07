@@ -60,6 +60,7 @@ static void parse_shockwaves_func()
 	Use_3D_shockwaves = enabled;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto Shockwave3DMode = options::OptionBuilder<bool>("Graphics.3DShockwaves",
                      std::pair<const char*, int>{"Shockwaves", 1722},
                      std::pair<const char*, int>{"The way shockwaves are displayed. Changes will be reflected in the next loaded mission.", 1723})
@@ -181,7 +182,8 @@ int shockwave_create(int parent_objnum, const vec3d* pos, const shockwave_create
 	objnum = obj_create( OBJ_SHOCKWAVE, real_parent, i, &orient, &sw->pos, sw->outer_radius, tmp_flags + Object::Object_Flags::Renders, false );
 
 	if ( objnum == -1 ){
-		Int3();
+		mprintf(("Couldn't create shockwave object -- out of object slots\n"));
+		return -1;
 	}
 
 	sw->objnum = objnum;

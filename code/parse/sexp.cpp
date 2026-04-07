@@ -86,6 +86,7 @@
 #include "parse/sexp.h"
 #include "parse/sexp_container.h"
 #include "playerman/player.h"
+#include "prop/prop.h"
 #include "render/3d.h"
 #include "scripting/global_hooks.h"
 #include "ship/afterburner.h"
@@ -796,8 +797,10 @@ SCP_vector<sexp_oper> Operators = {
 	{ "reset-post-effects",				OP_RESET_POST_EFFECTS,					0,	0,			SEXP_ACTION_OPERATOR,	},	// Goober5000
 	{ "ship-effect",					OP_SHIP_EFFECT,							3,	INT_MAX,	SEXP_ACTION_OPERATOR,	},	// Valathil
 	{ "ship-create",					OP_SHIP_CREATE,							5,	10,			SEXP_ACTION_OPERATOR,	},	// WMC
+	{ "prop-create",                    OP_PROP_CREATE,                         5,  8,          SEXP_ACTION_OPERATOR,   },  // MjnMixael
 	{ "weapon-create",					OP_WEAPON_CREATE,						5,	10,			SEXP_ACTION_OPERATOR,	},	// Goober5000
 	{ "ship-vanish",					OP_SHIP_VANISH,							1,	INT_MAX,	SEXP_ACTION_OPERATOR,	},
+	{ "prop-vanish",					OP_PROP_VANISH,							1,	INT_MAX,	SEXP_ACTION_OPERATOR,	},  // MjnMixael
 	{ "ship-vaporize",					OP_SHIP_VAPORIZE,						1,	INT_MAX,	SEXP_ACTION_OPERATOR,	},	// Goober5000
 	{ "ship-no-vaporize",				OP_SHIP_NO_VAPORIZE,					1,	INT_MAX,	SEXP_ACTION_OPERATOR,	},	// Goober5000
 	{ "set-explosion-option",			OP_SET_EXPLOSION_OPTION,				3,	INT_MAX,	SEXP_ACTION_OPERATOR,	},	// Goober5000
@@ -869,12 +872,12 @@ SCP_vector<sexp_oper> Operators = {
 	{ "ai-waypoints-once",				OP_AI_WAYPOINTS_ONCE,					2,	5,			SEXP_GOAL_OPERATOR,	},
 	{ "ai-ignore",						OP_AI_IGNORE,							2,	2,			SEXP_GOAL_OPERATOR,	},
 	{ "ai-ignore-new",					OP_AI_IGNORE_NEW,						2,	2,			SEXP_GOAL_OPERATOR,	},
-	{ "ai-form-on-wing",				OP_AI_FORM_ON_WING,						1,	1,			SEXP_GOAL_OPERATOR, },
+	{ "ai-form-on-wing",				OP_AI_FORM_ON_WING,						1,	5,			SEXP_GOAL_OPERATOR, },
 	{ "ai-fly-to-ship",					OP_AI_FLY_TO_SHIP,						2,	5,			SEXP_GOAL_OPERATOR, },
 	{ "ai-stay-near-ship",				OP_AI_STAY_NEAR_SHIP,					2,	5,			SEXP_GOAL_OPERATOR,	},
 	{ "ai-evade-ship",					OP_AI_EVADE_SHIP,						2,	2,			SEXP_GOAL_OPERATOR,	},
 	{ "ai-keep-safe-distance",			OP_AI_KEEP_SAFE_DISTANCE,				1,	1,			SEXP_GOAL_OPERATOR,	},
-	{ "ai-stay-still",					OP_AI_STAY_STILL,						2,	2,			SEXP_GOAL_OPERATOR,	},
+	{ "ai-stay-still",					OP_AI_STAY_STILL,						2,	3,			SEXP_GOAL_OPERATOR,	},
 	{ "ai-play-dead",					OP_AI_PLAY_DEAD,						1,	1,			SEXP_GOAL_OPERATOR,	},
 	{ "ai-play-dead-persistent",		OP_AI_PLAY_DEAD_PERSISTENT,				1,	1,			SEXP_GOAL_OPERATOR, },
 
@@ -2140,7 +2143,8 @@ bool is_special_sender(const char* name) {
  */
 int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, sexp_mode mode)
 {
-	int i = 0, z, type, argnum = 0, count, op, type2 = 0, op2;
+	int i = 0, z, type, argnum = 0, op, type2 = 0, op2;
+	size_t count;
 	int op_node;
 	int var_index = -1;
 	size_t st;
@@ -2192,7 +2196,7 @@ int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, s
 
 	count = query_sexp_args_count(op_node);
 
-	if (!check_operator_argument_count(count, op))
+	if (!check_operator_argument_count(sz2i(count), op))
 		return SEXP_CHECK_BAD_ARG_COUNT;  // incorrect number of arguments
 
 	node = Sexp_nodes[op_node].rest;
@@ -2494,6 +2498,15 @@ int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, s
 
 				break;
 
+			case OPF_PROP:
+				if (type2 != SEXP_ATOM_STRING) {
+					return SEXP_CHECK_TYPE_MISMATCH;
+				}
+				if (prop_name_lookup(CTEXT(node)) < 0) {
+					return SEXP_CHECK_INVALID_PROP;
+				}
+				break;
+
 			case OPF_WING:
 				if (type2 != SEXP_ATOM_STRING){
 					return SEXP_CHECK_TYPE_MISMATCH;
@@ -2560,6 +2573,24 @@ int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, s
 					return SEXP_CHECK_INVALID_SHIP_WING_WHOLETEAM;
 				else
 					return SEXP_CHECK_INVALID_SHIP_WING;
+
+			case OPF_SHIP_PROP:
+				if (type2 != SEXP_ATOM_STRING) {
+					return SEXP_CHECK_TYPE_MISMATCH;
+				}
+				if (ship_name_lookup(CTEXT(node), 1) >= 0) {
+					break;
+				}
+				if (prop_name_lookup(CTEXT(node)) >= 0) {
+					break;
+				}
+
+				// also check arrival list if we're running the game
+				if (!Fred_running && mission_check_ship_yet_to_arrive(CTEXT(node))) {
+					break;
+				}
+				
+				return SEXP_CHECK_INVALID_SHIP_PROP;
 
 			case OPF_AWACS_SUBSYSTEM:
 			case OPF_ROTATING_SUBSYSTEM:
@@ -2951,7 +2982,7 @@ int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, s
 					int valid = 0;
 
 					// <any friendly>, etc.
-					if (get_special_anchor(CTEXT(node)) >= 0)
+					if (get_special_anchor(CTEXT(node)).isValid())
 					{
 						valid = 1;
 					}
@@ -3017,8 +3048,8 @@ int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, s
 
 				// ship exists at this point
 
-				// now determine if this ship has a docking bay
-				if (!ship_has_dock_bay(shipnum))
+				// now determine if this ship has a hangar bay
+				if (!ship_has_hangar_bay(shipnum))
 					return SEXP_CHECK_INVALID_SHIP_WITH_BAY;
 
 				break;
@@ -3293,7 +3324,7 @@ int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, s
 					}
 
 					// look for mission
-					count = count_items_with_string(Campaign.missions, Campaign.num_missions, &cmission::name, CTEXT(z));
+					count = count_items_with_string(Campaign.missions, i2sz(Campaign.num_missions), &cmission::name, CTEXT(z));
 
 					// only check for a missing mission -- it's ok if the same mission appears multiple times in the campaign
 					if (count == 0) {
@@ -3492,65 +3523,32 @@ int check_sexp_syntax(int node, int return_type, int recursive, int *bad_node, s
 				break;
 
 			case OPF_SHIP_FLAG:
-				{
-				bool found = false;
-				for ( i = 0; i < Num_object_flag_names; i++) {
-					if (!stricmp(Object_flag_names[i].flag_name, CTEXT(node))) {
-						found = true;
-						break;
-					}
-				}
+			{
+				Object::Object_Flags object_flag = Object::Object_Flags::NUM_VALUES;
+				Ship::Ship_Flags ship_flag = Ship::Ship_Flags::NUM_VALUES;
+				Mission::Parse_Object_Flags parse_obj_flag = Mission::Parse_Object_Flags::NUM_VALUES;
+				AI::AI_Flags ai_flag = AI::AI_Flags::NUM_VALUES;
+				sexp_check_flag_arrays(CTEXT(node), object_flag, ship_flag, parse_obj_flag, ai_flag);
 
-				if (!found) {
-					for ( i = 0; i < (int)Num_ship_flag_names; i++) {
-						if (!stricmp(Ship_flag_names[i].flag_name, CTEXT(node))) {
-							found = true;
-							break;
-						}
-					}
-				}
-
-				if (!found) {
-					for ( i = 0; i < (int)Num_parse_object_flags; i++) {
-						if (!stricmp(Parse_object_flags[i].name, CTEXT(node))) {
-							found = true;
-							break;
-						}
-					}
-				}
-
-				if (!found) {
-					for ( i = 0; i < Num_ai_flag_names; i++) {
-						if (!stricmp(Ai_flag_names[i].flag_name, CTEXT(node))) {
-							found = true;
-							break;
-						}
-					}
-				}
-
-				if (!found) {
+				if (object_flag == Object::Object_Flags::NUM_VALUES && ship_flag == Ship::Ship_Flags::NUM_VALUES
+					&& parse_obj_flag == Mission::Parse_Object_Flags::NUM_VALUES && ai_flag == AI::AI_Flags::NUM_VALUES) {
 					return SEXP_CHECK_INVALID_SHIP_FLAG;
 				}
 
 				break;
-				}
+			}
 
 			case OPF_WING_FLAG:
-				{
-				bool found = false;
-				for ( i = 0; i < (int)Num_wing_flag_names; i++) {
-					if (!stricmp(Wing_flag_names[i].flag_name, CTEXT(node))) {
-						found = true;
-						break;
-					}
-				}
+			{
+				Ship::Wing_Flags wing_flag = Ship::Wing_Flags::NUM_VALUES;
+				sexp_check_flag_array(CTEXT(node), wing_flag);
 
-				if (!found) {
+				if (wing_flag == Ship::Wing_Flags::NUM_VALUES) {
 					return SEXP_CHECK_INVALID_WING_FLAG;
 				}
 
 				break;
-				}
+			}
 
 			case OPF_TEAM_COLOR:
 				if (type2 != SEXP_ATOM_STRING) {
@@ -4218,19 +4216,23 @@ int check_sexp_potential_issues(int node, int *bad_node, SCP_string &issue_msg)
 			case OP_IS_DESTROYED:
 			case OP_TIME_WING_DESTROYED:
 			{
-				for (int n = first_arg_node; n >= 0; n = CDR(n))
+				if (!The_mission.ai_profile->flags[AI::Profile_Flags::Cancel_future_waves_of_any_wing_launched_from_an_exited_ship])
 				{
-					int wingnum = wing_lookup(CTEXT(n));
-					if (wingnum >= 0)
+					for (int n = first_arg_node; n >= 0; n = CDR(n))
 					{
-						auto wingp = &Wings[wingnum];
-						if (wingp->num_waves > 1 && wingp->arrival_location == ArrivalLocation::FROM_DOCK_BAY)
+						int wingnum = wing_lookup(CTEXT(n));
+						if (wingnum >= 0)
 						{
-							issue_msg = "Wing ";
-							issue_msg += wingp->name;
-							issue_msg += " has more than one wave and arrives from a docking bay.  Be careful when checking for this wing's destruction.  If the "
-								"mothership is destroyed before all waves have arrived, the wing will not be considered destroyed.";
-							return SEXP_CHECK_POTENTIAL_ISSUE;
+							auto wingp = &Wings[wingnum];
+							if (wingp->num_waves > 1 && wingp->arrival_location == ArrivalLocation::FROM_DOCK_BAY)
+							{
+								issue_msg = "Wing ";
+								issue_msg += wingp->name;
+								issue_msg += " has more than one wave and arrives from a docking bay.  Be careful when checking for this wing's destruction.  If the "
+									"mothership is destroyed before all waves have arrived, the wing will not be considered destroyed.  Note that the "
+									"$cancel future waves of any wing launched from an exited ship: flag can be used to fix this.";
+								return SEXP_CHECK_POTENTIAL_ISSUE;
+							}
 						}
 					}
 				}
@@ -4454,6 +4456,23 @@ void preload_debris_class(const char* text)
 		return;
 
 	asteroid_load(idx, 0);
+}
+
+// MjnMixael
+void preload_change_prop_class(const char* text)
+{
+	int idx;
+	prop_info* pip;
+
+	idx = prop_info_lookup(text);
+	if (idx < 0)
+		return;
+
+	pip = &Prop_info[idx];
+	pip->model_num = model_load(pip->pof_file.c_str());
+
+	if (pip->model_num >= 0)
+		model_page_in_textures(pip->model_num, idx);
 }
 
 // Goober5000
@@ -4840,6 +4859,13 @@ int get_sexp()
 				// page in ship classes of dynamically created ships
 				// preload_change_ship_class doesn't require a class change, so we can use that here -zookeeper
 				do_preload_for_arguments(preload_change_ship_class, n, arg_handler);
+				break;
+
+			case OP_PROP_CREATE:
+				// prop class is argument #2
+				n = CDDR(start);
+				// page in prop classes of dynamically created props
+				do_preload_for_arguments(preload_change_prop_class, n, arg_handler);
 				break;
 
 			case OP_SET_SPECIAL_WARPOUT_NAME:
@@ -5777,6 +5803,49 @@ const ship_registry_entry *eval_ship(int node)
 	}
 
 	// we know nothing about this ship, apparently
+	return nullptr;
+}
+
+/**
+ * Gets a prop from a sexp node.  Returns the prop entry, or nullptr if the prop is unknown.
+ * May be overkill for props. Research required.
+ */
+const prop *eval_prop(int node)
+{
+	if (node < 0)
+		return nullptr;
+
+	// check cache
+	if (Sexp_nodes[node].cache)
+	{
+		// have we cached something else?
+		if (Sexp_nodes[node].cache->sexp_node_data_type != OPF_PROP)
+			return nullptr;
+
+		return prop_id_lookup(Sexp_nodes[node].cache->ship_registry_index);
+	}
+
+	// maybe forward to a special-arg node
+	if (Sexp_nodes[node].flags & SNF_SPECIAL_ARG_IN_NODE)
+	{
+		auto current_argument = Sexp_replacement_arguments.back();
+		int arg_node = current_argument.second;
+
+		if (arg_node >= 0)
+			return eval_prop(arg_node);
+	}
+
+	auto prop_idx = prop_name_lookup(CTEXT(node));
+	if (prop_idx >= 0)
+	{
+		// cache the value if it can't change later
+		if (!is_node_value_dynamic(node))
+			Sexp_nodes[node].cache = new sexp_cached_data(OPF_PROP, -1, prop_idx);
+
+		return prop_id_lookup(prop_idx);
+	}
+
+	// we know nothing about this prop, apparently
 	return nullptr;
 }
 
@@ -13411,9 +13480,9 @@ void sexp_hud_set_xstr(int n)
 	lcl_ext_localize(xstr, translated_string);
 
 	// Now replace tokens and variables
-	string_replace_tokens_with_keys(translated_string);
 	sexp_replace_variable_names_with_values(translated_string);
 	sexp_container_replace_refs_with_values(translated_string);
+	message_translate_tokens(translated_string);
 
 	HudGauge* cg = hud_get_custom_gauge(gaugename);
 	if (cg) {
@@ -13433,9 +13502,9 @@ void sexp_hud_set_message(int n)
 		if ( !stricmp(text, Messages[i].name) ) {
 			message = Messages[i].message;
 
-			string_replace_tokens_with_keys(message);
 			sexp_replace_variable_names_with_values(message);
 			sexp_container_replace_refs_with_values(message);
+			message_translate_tokens(message);
 
 			HudGauge* cg = hud_get_custom_gauge(gaugename);
 			if (cg) {
@@ -14117,8 +14186,30 @@ void sexp_load_music(const char *filename, int type = -1, int sexp_var = -1)
 	int index;
 	if (sexp_var >= 0)
 	{
-		index = static_cast<int>(Sexp_music_handles.size());
-		Sexp_music_handles.push_back(-1);
+		// if any handle has expired, it can be closed; and any closed or expired index can be reused
+		// (note that handles are not unique across an entire mission; any variables pointing to handles
+		// that have been closed will see those handles reused for new sounds)
+		int found_i = -1, n = sz2i(Sexp_music_handles.size());
+		for (int i = 1; i < n; ++i)	// skip the default handle
+		{
+			int this_handle = Sexp_music_handles[i];
+
+			if ((this_handle < 0) || (!audiostream_is_playing(this_handle) && !audiostream_is_paused(this_handle)))
+			{
+				audiostream_close_file(this_handle, false);
+				found_i = i;
+				break;
+			}
+		}
+
+		// either reuse an index or choose a new index
+		if (found_i >= 0)
+			index = found_i;
+		else
+		{
+			index = static_cast<int>(Sexp_music_handles.size());
+			Sexp_music_handles.push_back(-1);
+		}
 	}
 	// otherwise we'll be reusing the default handle, so close anything that's already playing
 	else
@@ -14129,6 +14220,8 @@ void sexp_load_music(const char *filename, int type = -1, int sexp_var = -1)
 
 	// open the stream and save the handle in our list
 	Sexp_music_handles[index] = audiostream_open(filename, type);
+	if (Sexp_music_handles[index] < 0)
+		Warning(LOCATION, "In sexp_load_music, could not create audio handle for '%s'!  You might be trying to play too many sounds at once.", filename);
 
 	// if we have a variable, save it there too
 	if (sexp_var >= 0)
@@ -15480,10 +15573,16 @@ void sexp_self_destruct(int node)
 
 void sexp_cancel_future_waves(int node)
 {
-	for (int n = node; n != -1; n = CDR(n))	{
+	for (int n = node; n != -1; n = CDR(n))
+	{
 		auto wingp = eval_wing(n);
-		if (wingp) {
+		if (wingp)
+		{
+			// prevent any more waves from arriving by marking this as the last wave
 			wingp->num_waves = wingp->current_wave;
+
+			// we might need to clean up this wing if there are no ships currently in the mission
+			wing_maybe_cleanup(wingp);
 		}
 	}
 }
@@ -17118,10 +17217,18 @@ void sexp_end_mission(int n)
 
 void multi_sexp_end_mission()
 {
-	// This is a bit of hack, but when in a debrief state clients will skip the
-	// warp out sequence when the endgame packet is processed.
-	send_debrief_event();
-	// Standard way to end mission (equivalent to Alt-J)
+	// Signal process_endgame_packet() to skip the warp-out sequence by entering
+	// debrief immediately when the MISSION_END packet arrives.  We cannot call
+	// send_debrief_event() here directly: on standalone servers the client has not
+	// yet received mission stats (m_okKills etc.) at this point, so
+	// scoring_level_close() would run with zeroed kill counts and
+	// Pilot.update_stats() would create no kill entries.  debrief_close() would
+	// then try to back out entries that were never created and hit an UNREACHABLE.
+	//
+	// send_endgame_packet() broadcasts stats to clients *before* sending MISSION_END,
+	// so by the time process_endgame_packet() fires, the stats are already present
+	// and it is safe to enter debrief there.
+	Multi_sexp_end_mission_pending = true;
 	multi_handle_end_mission_request();
 }
 
@@ -17807,6 +17914,13 @@ bool sexp_check_flag_arrays(const char *flag_name, Object::Object_Flags &object_
 			ai_flag = Ai_flag_names[i].flag;
 			break;
 		}
+	}
+
+	// check for deprecated flags
+	if (!stricmp("cannot-perform-scan", flag_name)) {
+		ship_flag = Ship::Ship_Flags::Cannot_perform_scan_hide_cargo;
+		parse_obj_flag = Mission::Parse_Object_Flags::SF_Cannot_perform_scan_hide_cargo;
+		send_multi = true;
 	}
 
 	return send_multi;
@@ -19496,6 +19610,55 @@ void sexp_ship_create(int n)
 	}
 }
 
+// MjnMixael
+void sexp_prop_create(int n)
+{
+	int new_prop_class, angle_count;
+	vec3d new_prop_pos;
+	angles new_prop_ang;
+	matrix new_prop_ori;
+	bool is_nan, is_nan_forever;
+
+	Assert( n >= 0 );
+
+	// get ship name
+	auto new_ship_name = CTEXT(n);
+	n = CDR(n);
+
+	// none means don't specify it
+	// if ship with this name already exists, ship_create will respond appropriately
+	if (!stricmp(new_ship_name, SEXP_NONE_STRING))
+		new_ship_name = nullptr;
+	
+	//Get ship class
+	new_prop_class = prop_info_lookup(CTEXT(n));
+	if (new_prop_class < 0)
+	{
+		Warning(LOCATION, "Invalid prop class passed to prop-create; prop type '%s' does not exist", CTEXT(n));
+		return;
+	}
+	n = CDR(n);
+
+	eval_vec3d(&new_prop_pos, n, is_nan, is_nan_forever);
+	if (is_nan || is_nan_forever)
+		return;
+
+	angle_count = eval_angles(&new_prop_ang, n, is_nan, is_nan_forever);
+	if (is_nan || is_nan_forever)
+		return;
+
+	//This is a costly function, so only do it if needed
+	if (angle_count > 0)
+		vm_angles_2_matrix(&new_prop_ori, &new_prop_ang);
+	else
+		new_prop_ori = vmd_identity_matrix;
+
+	int objnum = prop_create(&new_prop_ori, &new_prop_pos, new_prop_class, new_ship_name);
+	Assert(objnum != -1);
+
+	// note: model_page_in_textures was called via the sexp preloader
+}
+
 // Goober5000
 void sexp_weapon_create(int n)
 {
@@ -19582,6 +19745,17 @@ void sexp_ship_vanish(int n)
 		auto ship_entry = eval_ship(n);
 		if (ship_entry && ship_entry->status == ShipStatus::PRESENT)
 			ship_actually_depart(ship_entry->shipnum, SHIP_VANISHED);
+	}
+}
+
+// make prop vanish without a trace
+void sexp_prop_vanish(int n)
+{
+	for (; n != -1; n = CDR(n)) {
+		auto prop_entry = eval_prop(n);
+		if (prop_entry != nullptr) {
+			Objects[prop_entry->objnum].flags.set(Object::Object_Flags::Should_be_dead);
+		}
 	}
 }
 
@@ -23429,8 +23603,8 @@ void sexp_set_support_ship(int n)
 	}
 	else
 	{
-		// find or create the anchor
-		The_mission.support_ships.arrival_anchor = get_parse_name_index(CTEXT(n));
+		// find the anchor
+		The_mission.support_ships.arrival_anchor = anchor_t(ship_registry_get_index(CTEXT(n)));
 	}
 
 	// get departure location
@@ -23455,8 +23629,8 @@ void sexp_set_support_ship(int n)
 	}
 	else
 	{
-		// find or create the anchor
-		The_mission.support_ships.departure_anchor = get_parse_name_index(CTEXT(n));
+		// find the anchor
+		The_mission.support_ships.departure_anchor = anchor_t(ship_registry_get_index(CTEXT(n)));
 	}
 
 	// get ship class
@@ -23497,7 +23671,7 @@ void sexp_set_support_ship(int n)
 // Goober5000 - set stuff for arriving ships or wings
 void sexp_set_arrival_info(int node)
 {
-	int arrival_anchor, arrival_mask, arrival_distance, arrival_delay, n = node;
+	int arrival_mask, arrival_distance, arrival_delay, n = node;
 	bool show_warp, adjust_warp_when_docked, is_nan, is_nan_forever;
 	object_ship_wing_point_team oswpt;
 
@@ -23518,7 +23692,7 @@ void sexp_set_arrival_info(int node)
 	n = CDR(n);
 
 	// get arrival anchor
-	arrival_anchor = -1;
+	anchor_t arrival_anchor;
 	if ((n < 0) || !stricmp(CTEXT(n), "<no anchor>"))
 	{
 		// if no anchor, set arrival location to hyperspace
@@ -23526,8 +23700,8 @@ void sexp_set_arrival_info(int node)
 	}
 	else
 	{
-		// find or create the anchor
-		arrival_anchor = get_parse_name_index(CTEXT(n));
+		// find the anchor
+		arrival_anchor = anchor_t(ship_registry_get_index(CTEXT(n)));
 	}
 	n = CDR(n);
 
@@ -23597,7 +23771,7 @@ void sexp_set_arrival_info(int node)
 // Goober5000 - set stuff for departing ships or wings
 void sexp_set_departure_info(int node)
 {
-	int departure_anchor, departure_mask, departure_delay, n = node;
+	int departure_mask, departure_delay, n = node;
 	bool show_warp, adjust_warp_when_docked, is_nan, is_nan_forever;
 	object_ship_wing_point_team oswpt;
 
@@ -23618,7 +23792,7 @@ void sexp_set_departure_info(int node)
 	n = CDR(n);
 
 	// get departure anchor
-	departure_anchor = -1;
+	anchor_t departure_anchor;
 	if ((n < 0) || !stricmp(CTEXT(n), "<no anchor>"))
 	{
 		// if no anchor, set departure location to hyperspace
@@ -23626,8 +23800,8 @@ void sexp_set_departure_info(int node)
 	}
 	else
 	{
-		// find or create the anchor
-		departure_anchor = get_parse_name_index(CTEXT(n));
+		// find the anchor
+		departure_anchor = anchor_t(ship_registry_get_index(CTEXT(n)));
 	}
 	n = CDR(n);
 
@@ -27267,15 +27441,37 @@ int sexp_is_docked(int node)
 
 void sexp_manipulate_colgroup(int node, bool add_to_group)
 {
-	auto ship_entry = eval_ship(node);
-	if (!ship_entry || ship_entry->status == ShipStatus::EXITED)
-		return;
+	int colgroup_id = 0;
+	const ship_registry_entry* ship_entry = nullptr;
+	const prop* prop_entry = nullptr;
+	SCP_string name;
+
+	// Ship
+	ship_entry = eval_ship(node);
+	if (ship_entry) {
+		if (ship_entry->status == ShipStatus::EXITED)
+			return;
+
+		colgroup_id = (ship_entry->has_objp()) ? ship_entry->objp()->collision_group_id
+											   : ship_entry->p_objp()->collision_group_id;
+		name = ship_entry->name;
+
+	// Prop
+	} else {
+		prop_entry = eval_prop(node);
+
+		if (prop_entry) {
+			colgroup_id = Objects[prop_entry->objnum].collision_group_id;
+			name = prop_entry->prop_name;
+		} else { // Not a prop or a ship so warn and return
+			Warning(LOCATION, "Invalid object %s specified in manipulate-colgroup SEXP", CTEXT(node));
+			return;
+		}
+	}
+
 	node = CDR(node);
 
-	int colgroup_id = (ship_entry->has_objp())
-		? ship_entry->objp()->collision_group_id
-		: ship_entry->p_objp()->collision_group_id;
-
+	// Set the colgroup
 	for (; node != -1; node = CDR(node)) {
 		bool is_nan, is_nan_forever;
 		int group = eval_num(node, is_nan, is_nan_forever);
@@ -27284,20 +27480,34 @@ void sexp_manipulate_colgroup(int node, bool add_to_group)
 		}
 
 		if (group < 0 || group > 31) {
-			WarningEx(LOCATION, "Invalid collision group id %d specified for object %s. Valid IDs range from 0 to 31.\n", group, ship_entry->name);
+			WarningEx(LOCATION,
+				"Invalid collision group id %d specified for object %s. Valid IDs range from 0 to 31.\n",
+				group,
+				name.c_str());
 		} else {
 			if (add_to_group) {
-				colgroup_id |= (1<<group);
+				colgroup_id |= (1 << group);
 			} else {
-				colgroup_id &= ~(1<<group);
+				colgroup_id &= ~(1 << group);
 			}
 		}
 	}
 
-	if (ship_entry->has_objp())
-		ship_entry->objp()->collision_group_id = colgroup_id;
-	else
-		ship_entry->p_objp()->collision_group_id = colgroup_id;
+	// Apply it to ship
+	if (ship_entry) {
+		if (ship_entry->has_objp()) {
+			ship_entry->objp()->collision_group_id = colgroup_id;
+		} else {
+			ship_entry->p_objp()->collision_group_id = colgroup_id;
+		}
+
+		return;
+	}
+
+	// Apply it to prop
+	if (prop_entry) {
+		Objects[prop_entry->objnum].collision_group_id = colgroup_id;
+	}
 }
 
 void sexp_manipulate_colgroup_new(int node, bool add_to_group)
@@ -27308,47 +27518,71 @@ void sexp_manipulate_colgroup_new(int node, bool add_to_group)
 		return;
 	node = CDR(node);
 
-	if (group < 0 || group > 31)
-	{
+	if (group < 0 || group > 31) {
 		WarningEx(LOCATION, "Invalid collision group id %d specified. Valid IDs range from 0 to 31.\n", group);
 		return;
 	}
 
-	for (; node != -1; node = CDR(node))
-	{
-		auto ship_entry = eval_ship(node);
-		if (!ship_entry || ship_entry->status == ShipStatus::EXITED)
-			continue;
+	for (; node != -1; node = CDR(node)) {
 
-		if (ship_entry->has_objp())
-		{
-			if (add_to_group)
-				ship_entry->objp()->collision_group_id |= (1 << group);
-			else
-				ship_entry->objp()->collision_group_id &= ~(1 << group);
-		}
-		else
-		{
-			if (add_to_group)
-				ship_entry->p_objp()->collision_group_id |= (1 << group);
-			else
-				ship_entry->p_objp()->collision_group_id &= ~(1 << group);
+		// Ship
+		auto ship_entry = eval_ship(node);
+		if (ship_entry) {
+			if (ship_entry->status == ShipStatus::EXITED)
+				continue;
+
+			if (ship_entry->has_objp()) {
+				if (add_to_group)
+					ship_entry->objp()->collision_group_id |= (1 << group);
+				else
+					ship_entry->objp()->collision_group_id &= ~(1 << group);
+			} else {
+				if (add_to_group)
+					ship_entry->p_objp()->collision_group_id |= (1 << group);
+				else
+					ship_entry->p_objp()->collision_group_id &= ~(1 << group);
+			}
+
+		// Prop
+		} else {
+			auto prop_entry = eval_prop(node);
+
+			if (prop_entry) {
+				object& obj = Objects[prop_entry->objnum];
+
+				if (add_to_group)
+					obj.collision_group_id |= (1 << group);
+				else
+					obj.collision_group_id &= ~(1 << group);
+			}
 		}
 	}
 }
 
 int sexp_get_colgroup(int node)
 {
+	// Ship
 	auto ship_entry = eval_ship(node);
-	if (!ship_entry)
-		return SEXP_NAN;
-	if (ship_entry->status == ShipStatus::EXITED)
-		return SEXP_NAN_FOREVER;
+	if (ship_entry) {
+		if (ship_entry->status == ShipStatus::EXITED)
+			return SEXP_NAN_FOREVER;
 
-	if (ship_entry->has_objp())
-		return ship_entry->objp()->collision_group_id;
-	else
-		return ship_entry->p_objp()->collision_group_id;
+		if (ship_entry->has_objp())
+			return ship_entry->objp()->collision_group_id;
+		else
+			return ship_entry->p_objp()->collision_group_id;
+
+	// Prop
+	} else {
+		auto prop_entry = eval_prop(node);
+		if (prop_entry) {
+			const object& obj = Objects[prop_entry->objnum];
+
+			return obj.collision_group_id;
+		}
+	}
+
+	return SEXP_NAN;
 }
 
 int get_effect_from_name(const char* name)
@@ -28680,6 +28914,11 @@ int eval_sexp(int cur_node, int referenced_node)
 				sexp_val = SEXP_TRUE;
 				break;
 
+			case OP_PROP_CREATE:
+				sexp_prop_create(node);
+				sexp_val = SEXP_TRUE;
+				break;
+
 			case OP_WEAPON_CREATE:
 				sexp_weapon_create(node);
 				sexp_val = SEXP_TRUE;
@@ -28687,6 +28926,11 @@ int eval_sexp(int cur_node, int referenced_node)
 
 			case OP_SHIP_VANISH:
 				sexp_ship_vanish(node);
+				sexp_val = SEXP_TRUE;
+				break;
+
+			case OP_PROP_VANISH:
+				sexp_prop_vanish(node);
 				sexp_val = SEXP_TRUE;
 				break;
 
@@ -31363,6 +31607,7 @@ int query_operator_return_type(int op)
 		case OP_SHIP_GUARDIAN_THRESHOLD:
 		case OP_SHIP_SUBSYS_GUARDIAN_THRESHOLD:
 		case OP_SHIP_VANISH:
+		case OP_PROP_VANISH:
 		case OP_DESTROY_INSTANTLY:
 		case OP_DESTROY_INSTANTLY_WITH_DEBRIS:
 		case OP_SHIELDS_ON:
@@ -31553,6 +31798,7 @@ int query_operator_return_type(int op)
 		case OP_SET_OBJECT_SPEED_Y:
 		case OP_SET_OBJECT_SPEED_Z:
 		case OP_SHIP_CREATE:
+		case OP_PROP_CREATE:
 		case OP_WEAPON_CREATE:
 		case OP_MISSION_SET_NEBULA:
 		case OP_CHANGE_BACKGROUND:
@@ -31991,6 +32237,9 @@ int query_operator_argument_type(int op, int argnum)
 		case OP_ABORT_REARM:
 			return OPF_SHIP;
 
+		case OP_PROP_VANISH:
+			return OPF_PROP;
+
 		case OP_ALTER_SHIP_FLAG:
 			if(argnum == 0)
 				return OPF_SHIP_FLAG;
@@ -32025,6 +32274,14 @@ int query_operator_argument_type(int op, int argnum)
 				return OPF_IFF;
 			else if (argnum == 9)
 				return OPF_BOOL;
+			else
+				return OPF_NUMBER;
+
+		case OP_PROP_CREATE:
+			if (argnum == 0)
+				return OPF_STRING;
+			else if (argnum == 1)
+				return OPF_PROP_CLASS_NAME;
 			else
 				return OPF_NUMBER;
 
@@ -33179,13 +33436,20 @@ int query_operator_argument_type(int op, int argnum)
 			return OPF_POSITIVE;
 
 		case OP_AI_STAY_STILL:
-			if (!argnum)
+			if (argnum == 0)
 				return OPF_SHIP_POINT;
-			else
+			else if (argnum == 1)
 				return OPF_POSITIVE;
+			else
+				return OPF_BOOL;
 
 		case OP_AI_FORM_ON_WING:
-			return OPF_SHIP;
+			if (argnum == 0)
+				return OPF_SHIP;
+			else if (argnum == 1)
+				return OPF_POSITIVE;
+			else
+				return OPF_BOOL;
 
 		case OP_GOOD_REARM_TIME:
 		case OP_BAD_REARM_TIME:
@@ -34471,12 +34735,12 @@ int query_operator_argument_type(int op, int argnum)
 				return OPF_BUILTIN_HUD_GAUGE;
 
 		case OP_GET_COLGROUP_ID:
-			return OPF_SHIP;
+			return OPF_SHIP_PROP;
 
 		case OP_ADD_TO_COLGROUP:
 		case OP_REMOVE_FROM_COLGROUP:
 			if (argnum == 0)
-				return OPF_SHIP;
+				return OPF_SHIP_PROP;
 			else
 				return OPF_POSITIVE;
 
@@ -34485,7 +34749,7 @@ int query_operator_argument_type(int op, int argnum)
 			if (argnum == 0)
 				return OPF_POSITIVE;
 			else
-				return OPF_SHIP;
+				return OPF_SHIP_PROP;
 
 		case OP_SHIP_EFFECT:
 			if (argnum == 0)
@@ -34980,6 +35244,9 @@ const char *sexp_error_message(int num)
 		case SEXP_CHECK_INVALID_SHIP:
 			return "Invalid ship name";
 
+		case SEXP_CHECK_INVALID_PROP:
+			return "Invalid prop name";
+
 		case SEXP_CHECK_INVALID_WING:
 			return "Invalid wing name";
 
@@ -35009,6 +35276,9 @@ const char *sexp_error_message(int num)
 
 		case SEXP_CHECK_INVALID_SHIP_WING:
 			return "Invalid ship or wing name";
+
+		case SEXP_CHECK_INVALID_SHIP_PROP:
+			return "Invalid ship or prop name";
 
 		case SEXP_CHECK_INVALID_SHIP_TYPE:
 			return "Invalid ship type";
@@ -35479,11 +35749,13 @@ void sexp_modify_variable(const char *text, int index, bool sexp_callback)
 	Assert( !MULTIPLAYER_CLIENT );
 	const size_t maxCopyLen = TOKEN_LENGTH - 1;
 
-	if (strchr(text, '$') != nullptr)
+	if (strchr(text, '$') != nullptr || strchr(text, sexp_container::DELIM) != nullptr)
 	{
-		// we want to use the same variable substitution that's in messages etc.
+		// we want to use the same text substitution that's in messages etc.
 		SCP_string temp_text = text;
 		sexp_replace_variable_names_with_values(temp_text);
+		sexp_container_replace_refs_with_values(temp_text);
+		message_translate_tokens(temp_text);
 
 		if (temp_text.length() > maxCopyLen)
 			Warning(LOCATION, "String too long.  Only " SIZE_T_ARG " characters will be assigned to %s.\n\nOriginal string:\n%s", maxCopyLen, Sexp_variables[index].variable_name, temp_text.c_str());
@@ -36098,22 +36370,6 @@ int sexp_variable_count()
 }
 
 /**
- * Count number of persistent sexp_variables that are set
- */
-int sexp_campaign_file_variable_count()
-{
-	int count = 0;
-
-	for (int i=0; i<MAX_SEXP_VARIABLES; i++) {
-		if ( (Sexp_variables[i].type & SEXP_VARIABLE_SET) && (Sexp_variables[i].type & SEXP_VARIABLE_IS_PERSISTENT) && !(Sexp_variables[i].type & SEXP_VARIABLE_SAVE_TO_PLAYER_FILE) ) {
-			count++;
-		}
-	}
-
-	return count;
-}
-
-/**
  * Given an index in Sexp_variables, returns the number variables of a type in the array until this point
  */
 int sexp_variable_typed_count(int sexp_variables_index, int variable_type)
@@ -36543,6 +36799,7 @@ int get_category(int op_id)
 		case OP_CARGO_NO_DEPLETE:
 		case OP_SET_SPECIAL_WARPOUT_NAME:
 		case OP_SHIP_VANISH:
+		case OP_PROP_VANISH:
 		case OP_SHIELDS_ON:
 		case OP_SHIELDS_OFF:
 		case OP_CHANGE_AI_LEVEL:
@@ -36635,6 +36892,7 @@ int get_category(int op_id)
 		case OP_SHIP_SUBSYS_GUARDIAN_THRESHOLD:
 		case OP_SET_SKYBOX_MODEL:
 		case OP_SHIP_CREATE:
+		case OP_PROP_CREATE:
 		case OP_WEAPON_CREATE:
 		case OP_SET_OBJECT_SPEED_X:
 		case OP_SET_OBJECT_SPEED_Y:
@@ -37321,8 +37579,10 @@ int get_subcategory(int op_id)
 		case OP_RESET_POST_EFFECTS:
 		case OP_SHIP_EFFECT:
 		case OP_SHIP_CREATE:
+		case OP_PROP_CREATE:
 		case OP_WEAPON_CREATE:
 		case OP_SHIP_VANISH:
+		case OP_PROP_VANISH:
 		case OP_SHIP_VAPORIZE:
 		case OP_SHIP_NO_VAPORIZE:
 		case OP_SET_EXPLOSION_OPTION:
@@ -39137,7 +39397,8 @@ SCP_vector<sexp_help_struct> Sexp_help = {
 		"\t2: Enter a non-zero number to loop. default is off (optional).\r\n"
 		"\t3: Enter a non-zero number to use environment effects. default is off (optional).\r\n"
 		"\t4: Numeric variable in which to store the music handle (optional).  If no variable is specified, the 'default' handle is used.  "
-		"Only one 'default' track can be played at a time, but multiple variable-managed tracks can be played.\r\n"
+		"Only one 'default' track can be played at a time, but multiple variable-managed tracks can be played.  NOTE: Handles are not globally unique.  If a sound "
+		"finishes playing, its handle may be reused for another sound played later in the mission.\r\n"
 	},
 
 	// Goober5000
@@ -40037,21 +40298,25 @@ SCP_vector<sexp_help_struct> Sexp_help = {
 		"\t1:\tName of target to ignore.\r\n"
 		"\t2:\tGoal priority (number between 0 and 89) - note, this does not imply any ranking of ignored targets." },
 
-	{ OP_AI_STAY_STILL, "Ai-stay still (Ship goal)\r\n"
+	{ OP_AI_STAY_STILL, "Ai-stay-still (Ship goal)\r\n"
 		"\tCauses the specified ship to stay still.  The ship will do nothing until attacked at "
 		"which time the ship will come to life and defend itself.\r\n\r\n"
-		"Takes 2 arguments...\r\n"
+		"By default all goals on the ship's goal list will be cleared when this goal runs, which means that the ship forgets both "
+		"this goal and all previous goals, and if it receives any other goal in any way, "
+		"it will immediately begin a new behavior.  Use the optional sexp flag (argument 3) to prevent this from happening.\r\n\r\n"
+		"Takes 2 to 3 arguments...\r\n"
 		"\t1:\tShip or waypoint the ship staying still will directly face (currently not implemented)\r\n"
-		"\t2:\tGoal priority (number between 0 and 89)." },
+		"\t2:\tGoal priority (number between 0 and 89).\r\n"
+		"\t3:\tWhether to clear all goals (optional).  If not specified this will be true, or the value defined in ai_profiles.\r\n"
+	},
 
 	{ OP_AI_PLAY_DEAD, "Ai-play-dead (Ship goal)\r\n"
 		"\tCauses the specified ship to pretend that it is dead and not do anything.  This "
 		"expression should be used to indicate that a ship has no pilot and cannot respond "
 		"to any enemy threats.  A ship playing dead will not respond to any attack.\r\n\r\n"
-		"Do note that the ship's goal list is cleared, which means both that it forgets "
-		"this goal and all previous goals, and that if it receives any other goal in any way, "
-		"it will immediately come back to life.  Use ai-play-dead-persistent to prevent this "
-		"from happening.\r\n\r\n"
+		"By default all goals on the ship's goal list will be cleared when this goal runs, which means that the ship forgets both "
+		"this goal and all previous goals, and if it receives any other goal in any way, "
+		"it will immediately come back to life.  Use ai-play-dead-persistent to prevent this from happening.\r\n\r\n"
 		"Takes 1 argument...\r\n"
 		"\t1:\tGoal priority (number between 0 and 89)." },
 
@@ -40067,9 +40332,17 @@ SCP_vector<sexp_help_struct> Sexp_help = {
 
 	{ OP_AI_FORM_ON_WING, "Ai-form-on-wing (Ship Goal)\r\n"
 		"\tCauses the ship to form on the specified ship's wing. This works analogous to the "
-		"player order, and will cause all other goals specified for the ship to be purged.\r\n\r\n"
-		"Takes 1 argument...\r\n"
-		"\t1:\tShip to form on." },
+		"player order, and by default will cause all goals on the ship's goal list to be cleared when this goal runs, which means that the ship forgets both "
+		"this goal and all previous goals, and if it receives any other goal in any way, "
+		"it will immediately begin a new behavior.  By default it will also be given an internal override flag that will cause it to "
+		"take priority over all other goals.\r\n\r\n"
+		"Takes 1 to 5 arguments...\r\n"
+		"\t1:\tShip to form on.\r\n"
+		"\t2:\tGoal priority (number between 0 and 89, optional).  If not specified this will be 99, or the number defined in ai_profiles.\r\n"
+		"\t3:\tWhether to clear all goals (optional).  If not specified this will be true, or the value defined in ai_profiles.\r\n"
+		"\t4:\tWhether this goal should override all other goals (optional).  If not specified this will be true, or the value defined in ai_profiles.\r\n"
+		"\t5:\tWhether this goal should be cleared if any other goal is assigned (optional).  If not specified this will be false.\r\n"
+	},
 
 	{ OP_FLASH_HUD_GAUGE, "Ai-flash hud gauge (Training goal)\r\n"
 		"\tCauses the specified hud gauge to flash to draw the player's attention to it.\r\n\r\n"
@@ -40094,10 +40367,12 @@ SCP_vector<sexp_help_struct> Sexp_help = {
 	},
 
 	{ OP_CANCEL_FUTURE_WAVES, "cancel-future-waves\r\n"
-		"\tCancel all waves of a wing which have not yet arrived. Waves that have arrived already are not affected. is-destroyed-delay, ship-type-destroyed, and similar operators behave as though the cancelled waves do not exist.\r\n\r\nIf this operator is called on a wing which has not arrived, the wing will never arrive, exactly as if its arrival cue were set to false. That wing is not marked as destroyed.\r\n\r\n"
+		"\tCancel all waves of a wing which have not yet arrived. Waves that have arrived already are not affected. The is-destroyed-delay, "
+		"ship-type-destroyed, and similar operators behave as though the cancelled waves do not exist.\r\n\r\nIf this operator is called on a wing "
+		"which has not arrived, the wing will never arrive, exactly as if its arrival cue were set to false; and that wing is not marked as destroyed. "
+		"Otherwise, wings will be marked as destroyed or departed in the same manner as they would have been if they were truly on the last wave.\r\n\r\n"
 		"Takes 1 or more arguments...\r\n"
 		"\tAll:\tThe name of a wing to cancel." },
-
 
 	{ OP_SHIP_VISIBLE, "ship-visible\r\n"
 		"\tCauses the ships listed in this sexpression to be visible with player sensors.\r\n\r\n"
@@ -40997,6 +41272,11 @@ SCP_vector<sexp_help_struct> Sexp_help = {
 		"\tSingle Player Only!  Warning: This will cause ship exit not to be logged, so 'has-departed', etc. will not work\r\n"
 		"\t1: List of ship names to vanish (ship must be in-mission)\r\n"},
 
+	{ OP_PROP_VANISH, "prop-vanish\r\n"
+		"\tMakes the named prop vanish\r\n"
+		"\tSingle Player Only!\r\n"
+		"\t1: List of prop names to vanish (prop must be in-mission)\r\n"},
+
 	{ OP_DESTROY_INSTANTLY, "destroy-instantly\r\n"
 		"\tSelf-destructs the named ship without explosion, death roll, or debris.  That is, the ship is instantly gone from the mission and the only indication of what happened is a mission log entry.\r\n"
 		"\tNon-player ship only!\r\n"
@@ -41020,6 +41300,19 @@ SCP_vector<sexp_help_struct> Sexp_help = {
 		"\t8: Heading (optional)\r\n"
 		"\t9: Team (optional; overrides ships.tbl default if set)\r\n"
 		"\t10: Show in mission log (optional; defaults to true)\r\n"
+	},
+
+	{ OP_PROP_CREATE, "prop-create\r\n"
+		"\tCreates a new prop\r\n"
+		"\tTakes 5 to 8 arguments...\r\n"
+		"\t1: Name of new prop (use \"" SEXP_NONE_STRING "\" for a default name)\r\n"
+		"\t2: Class of new prop\r\n"
+		"\t3: X position\r\n"
+		"\t4: Y position\r\n"
+		"\t5: Z position\r\n"
+		"\t6: Pitch (optional)\r\n"
+		"\t7: Bank (optional)\r\n"
+		"\t8: Heading (optional)\r\n"
 	},
 
 	// Goober5000
@@ -42237,37 +42530,37 @@ SCP_vector<sexp_help_struct> Sexp_help = {
 	},
 
 	{OP_ADD_TO_COLGROUP, "add-to-collision-group\r\n"
-		"\tAdds a ship to the specified collision group(s). Note that there are 32 collision groups, "
+		"\tAdds a ship/prop to the specified collision group(s). Note that there are 32 collision groups, "
 		"and that an object may be in several collision groups at the same time\r\n"
 		"Takes 2 or more arguments...\r\n"
-		"\t1:\tShip to add (ships do not need to be in-mission).\r\n"
+		"\t1:\tShip/prop to add (ships do not need to be in-mission).\r\n"
 		"\t2+:\tGroup IDs. Valid IDs are 0 through 31 inclusive.\r\n"
 	},
 
 	{OP_REMOVE_FROM_COLGROUP, "remove-from-collision-group\r\n"
-		"\tRemoves a ship from the specified collision group(s). Note that there are 32 collision groups, "
+		"\tRemoves a ship/prop from the specified collision group(s). Note that there are 32 collision groups, "
 		"and that an object may be in several collision groups at the same time\r\n"
 		"Takes 2 or more arguments...\r\n"
-		"\t1:\tShip to add (ships do not need to be in-mission).\r\n"
+		"\t1:\tShip/prop to add (ships do not need to be in-mission).\r\n"
 		"\t2+:\tGroup IDs. Valid IDs are 0 through 31 inclusive.\r\n"
 	},
 
 	{OP_ADD_TO_COLGROUP_NEW, "add-to-collision-group-new\r\n"
-		"\tAdds one or more ships to the specified collision group. There are 32 collision groups, "
+		"\tAdds one or more ships/props to the specified collision group. There are 32 collision groups, "
 		"and an object may be in several collision groups at the same time. This sexp functions identically to "
-		"add-to-collision-group, except that the arguments are one group and many ships, rather than one ship and many groups.\r\n"
+		"add-to-collision-group, except that the arguments are one group and many ships/props, rather than one ship/prop and many groups.\r\n"
 		"Takes 2 or more arguments...\r\n"
 		"\t1:\tGroup ID. Valid IDs are 0 through 31 inclusive.\r\n"
-		"\t2+:\tShip to add (ships do not need to be in-mission).\r\n"
+		"\t2+:\tShip/prop to add (ships do not need to be in-mission).\r\n"
 	},
 
 	{OP_REMOVE_FROM_COLGROUP_NEW, "remove-from-collision-group-new\r\n"
-		"\tRemoves one or more ships from the specified collision group. There are 32 collision groups, "
+		"\tRemoves one or more ships/props from the specified collision group. There are 32 collision groups, "
 		"and an object may be in several collision groups at the same time. This sexp functions identically to "
-		"remove-from-collision-group, except that the arguments are one group and many ships, rather than one ship and many groups.\r\n"
+		"remove-from-collision-group, except that the arguments are one group and many ships/props, rather than one ship/prop and many groups.\r\n"
 		"Takes 2 or more arguments...\r\n"
 		"\t1:\tGroup ID. Valid IDs are 0 through 31 inclusive.\r\n"
-		"\t2+:\tShip to remove (ships do not need to be in-mission).\r\n"
+		"\t2+:\tShip/prop to remove (ships do not need to be in-mission).\r\n"
 	},
 
 	{OP_GET_COLGROUP_ID, "get-collision-group\r\n"

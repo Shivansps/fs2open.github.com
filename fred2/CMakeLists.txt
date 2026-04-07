@@ -87,8 +87,6 @@ set(FRED2_SOURCES
 	missiongoalsdlg.h
 	missionnotesdlg.cpp
 	missionnotesdlg.h
-	missionsave.cpp
-	missionsave.h
 	modifyvariabledlg.cpp
 	modifyvariabledlg.h
 	musicplayerdlg.cpp
@@ -103,6 +101,8 @@ set(FRED2_SOURCES
 	playerstarteditor.h
 	prefsdlg.cpp
 	prefsdlg.h
+	propdlg.cpp
+	propdlg.h
 	reinforcementeditordlg.cpp
 	reinforcementeditordlg.h
 	resource.h

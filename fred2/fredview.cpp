@@ -31,6 +31,7 @@
 #include "ai/ai.h"
 #include "ai/aigoals.h"
 #include "ship/ship.h"	// for ship names
+#include "prop/prop.h" // for prop names
 #include "MissionGoalsDlg.h"
 #include "MissionCutscenesDlg.h"
 #include "wing.h"
@@ -149,6 +150,7 @@ BEGIN_MESSAGE_MAP(CFREDView, CView)
 	ON_UPDATE_COMMAND_UI(ID_SHOW_WAYPOINTS, OnUpdateViewWaypoints)
 	ON_WM_LBUTTONDOWN()
 	ON_COMMAND(ID_EDITORS_SHIPS, OnEditorsShips)
+	ON_COMMAND(ID_EDITORS_PROPS, OnEditorsProps)
 	ON_WM_KEYDOWN()
 	ON_WM_KEYUP()
 	ON_WM_SETFOCUS()
@@ -966,23 +968,31 @@ void CFREDView::OnLButtonDown(UINT nFlags, CPoint point)
 	drag_rotate_save_backup();
 	
 	if (nFlags & MK_CONTROL)	{  // add a new object
-		if (!Bg_bitmap_dialog) {
-			if (on_object == -1) {
-				Selection_lock = 0;  // force off selection lock
-				on_object = create_object_on_grid(waypoint_instance);
+		bool shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
-			} else
-				Dup_drag = 1;
-
+		if (shift_down) {
+			Selection_lock = 0; // force off selection lock
+			on_object = create_object_on_grid(waypoint_instance, true);
 		} else {
-			/*
-			Selection_lock = 0;  // force off selection lock
-			on_object = Cur_bitmap = create_bg_bitmap();
-			Bg_bitmap_dialog->update_data();
-			Update_window = 1;
-			if (Cur_bitmap == -1)
-				MessageBox("Background bitmap limit reached.\nCan't add more.");
-			*/
+
+			if (!Bg_bitmap_dialog) {
+				if (on_object == -1) {
+					Selection_lock = 0; // force off selection lock
+					on_object = create_object_on_grid(waypoint_instance);
+
+				} else
+					Dup_drag = 1;
+
+			} else {
+				/*
+				Selection_lock = 0;  // force off selection lock
+				on_object = Cur_bitmap = create_bg_bitmap();
+				Bg_bitmap_dialog->update_data();
+				Update_window = 1;
+				if (Cur_bitmap == -1)
+					MessageBox("Background bitmap limit reached.\nCan't add more.");
+				*/
+			}
 		}
 
 	} else if (!Selection_lock) {
@@ -1187,6 +1197,18 @@ void CFREDView::OnEditorsShips()
 	Ship_editor_dialog.ShowWindow(SW_RESTORE);
 }
 
+void CFREDView::OnEditorsProps()
+{
+	Assert(Prop_editor_dialog.GetSafeHwnd());
+
+	if (!theApp.init_window(&Prop_wnd_data, &Prop_editor_dialog, 0))
+		return;
+
+	Prop_editor_dialog.SetWindowPos(&wndTop, 0, 0, 0, 0,
+		SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE);
+	Prop_editor_dialog.ShowWindow(SW_RESTORE);
+}
+
 void CFREDView::OnKeyDown(UINT nChar, UINT nRepCnt, UINT lParam)
 {
 	uint lKeyData;
@@ -1228,11 +1250,10 @@ void CFREDView::OnSetFocus(CWnd* pOldWnd)
 		Update_wing = 0;
 	}
 
-/*	if (Wing_editor_dialog.verify() == -1)
-		return;  // abort
-
-	if (Ship_editor_dialog.verify() == -1)
-		return;  // abort*/
+	if (Update_prop) {
+		Prop_editor_dialog.initialize_data(1);
+		Update_prop = 0;
+	}
 
 	if (update_dialog_boxes()) {
 		nprintf(("Fred routing", "OnSetFocus() returned (error occured)\n"));
@@ -1376,7 +1397,7 @@ void select_objects()
 		}
 	}
 
-	Update_ship = Update_wing = 1;
+	Update_ship = Update_wing = Update_prop = 1;
 }
 
 LRESULT CFREDView::OnMenuPopupShips(WPARAM wParam, LPARAM lParam)
@@ -1452,10 +1473,14 @@ void CFREDView::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
 			else {
 				CString str;
 
-				if ((Objects[objnum].type == OBJ_START) || (Objects[objnum].type == OBJ_SHIP))
+				if ((Objects[objnum].type == OBJ_START) || (Objects[objnum].type == OBJ_SHIP)) {
 					str.Format("Edit %s", Ships[Objects[objnum].instance].ship_name);
 
-				else if (Objects[objnum].type == OBJ_JUMP_NODE) {
+				} else if (Objects[objnum].type == OBJ_PROP) {
+					id = ID_EDITORS_PROPS;
+					str.Format("Edit %s", prop_id_lookup(Objects[objnum].instance)->prop_name);
+
+				} else if (Objects[objnum].type == OBJ_JUMP_NODE) {
 					auto jnp = jumpnode_get_by_objnum(objnum);
 					Assert(jnp != nullptr);
 
@@ -1463,12 +1488,11 @@ void CFREDView::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
 					str.Format("Edit %s", jnp->GetName());
 
 				} else if (Objects[objnum].type == OBJ_WAYPOINT) {
-					int idx;
-					waypoint_list *wp_list = find_waypoint_list_with_instance(Objects[objnum].instance, &idx);
-					Assert(wp_list != NULL);
+					char text[NAME_LENGTH];
+					waypoint_stuff_name(text, Objects[objnum].instance);
 
 					id = ID_EDITORS_WAYPOINT;
-					str.Format("Edit %s:%d", wp_list->get_name(), idx + 1);
+					str.Format("Edit %s", text);
 
 				} else if (Objects[objnum].type == OBJ_POINT) {
 					return;
@@ -1993,6 +2017,10 @@ void CFREDView::OnLButtonDblClk(UINT nFlags, CPoint point)
 				OnEditorsShips();
 				break;
 
+			case OBJ_PROP:
+				OnEditorsProps();
+				break;
+
 			case OBJ_WAYPOINT:
 				OnEditorsWaypoint();
 				break;
@@ -2441,7 +2469,7 @@ int CFREDView::global_error_check()
 	object *ptr;
 	brief_stage *sp;
 	SCP_string anchor_message;
-	SCP_set<int> anchor_shipnums_checked;
+	SCP_set<anchor_t> anchors_checked;
 
 	g_err = multi = 0;
 	if ( The_mission.game_type & MISSION_TYPE_MULTI )
@@ -2574,7 +2602,7 @@ int CFREDView::global_error_check()
 				return internal_error("Object references an illegal waypoint number in path");
 			}
 
-			sprintf(buf, "%s:%d", wp_list->get_name(), waypoint_num + 1);
+			waypoint_stuff_name(buf, i);
 			names[obj_count] = new char[strlen(buf) + 1];
 			strcpy(names[obj_count], buf);
 			flags[obj_count] = 1;
@@ -2585,7 +2613,7 @@ int CFREDView::global_error_check()
 			//Shouldn't be needed anymore.
 			//If we really do need it, call me and I'll write a is_valid function for jumpnodes -WMC
 		} 
-		else if (ptr->type == OBJ_JUMP_NODE)
+		else if (ptr->type == OBJ_JUMP_NODE || ptr->type == OBJ_PROP)
 		{
 			//nothing needs to be done here, we just need to make sure the else doesn't occur
 		}
@@ -2635,13 +2663,13 @@ int CFREDView::global_error_check()
 			}
 
 			if (Ships[i].arrival_location != ArrivalLocation::AT_LOCATION) {
-				if (Ships[i].arrival_anchor < 0){
+				if (!Ships[i].arrival_anchor.isValid()){
 					if (error("Ship \"%s\" requires a valid arrival target", Ships[i].ship_name)){
 						return 1;
 					}
 				}
 				if (Ships[i].arrival_location == ArrivalLocation::FROM_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Ships[i].arrival_anchor, Ships[i].ship_name, true, true);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Ships[i].arrival_anchor, Ships[i].ship_name, true, true);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2649,13 +2677,13 @@ int CFREDView::global_error_check()
 			}
 
 			if (Ships[i].departure_location != DepartureLocation::AT_LOCATION) {
-				if (Ships[i].departure_anchor < 0){
+				if (!Ships[i].departure_anchor.isValid()){
 					if (error("Ship \"%s\" requires a valid departure target", Ships[i].ship_name)){
 						return 1;
 					}
 				}
 				if (Ships[i].departure_location == DepartureLocation::TO_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Ships[i].departure_anchor, Ships[i].ship_name, true, false);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Ships[i].departure_anchor, Ships[i].ship_name, true, false);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2824,7 +2852,7 @@ int CFREDView::global_error_check()
 				return internal_error("Number of waves for \"%s\" is negative", Wings[i].name);
 			}
 
-			if ((Wings[i].threshold < 0) || (Wings[i].threshold >= Wings[i].wave_count)){
+			if (Wings[i].threshold < 0){
 				return internal_error("Threshold for \"%s\" is invalid", Wings[i].name);
 			}
 
@@ -2852,11 +2880,11 @@ int CFREDView::global_error_check()
 			}
 
 			if (Wings[i].arrival_location != ArrivalLocation::AT_LOCATION) {
-				if (Wings[i].arrival_anchor < 0)
+				if (!Wings[i].arrival_anchor.isValid())
 					if (error("Wing \"%s\" requires a valid arrival target", Wings[i].name))
 						return 1;
 				if (Wings[i].arrival_location == ArrivalLocation::FROM_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Wings[i].arrival_anchor, Wings[i].name, false, true);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Wings[i].arrival_anchor, Wings[i].name, false, true);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2864,11 +2892,11 @@ int CFREDView::global_error_check()
 			}
 
 			if (Wings[i].departure_location != DepartureLocation::AT_LOCATION) {
-				if (Wings[i].departure_anchor < 0)
+				if (!Wings[i].departure_anchor.isValid())
 					if (error("Wing \"%s\" requires a valid departure target", Wings[i].name))
 						return 1;
 				if (Wings[i].departure_location == DepartureLocation::TO_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Wings[i].departure_anchor, Wings[i].name, false, false);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Wings[i].departure_anchor, Wings[i].name, false, false);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2900,8 +2928,8 @@ int CFREDView::global_error_check()
 			}
 		}
 
-		for (j = 0; (uint) j < ii.get_waypoints().size(); j++) {
-			sprintf(buf, "%s:%d", ii.get_name(), j + 1);
+		for (const auto &jj: ii.get_waypoints()) {
+			waypoint_stuff_name(buf, jj);
 			for (z=0; z<obj_count; z++){
 				if (names[z]){
 					if (!stricmp(names[z], buf)){
@@ -3371,27 +3399,22 @@ int CFREDView::error(const char *msg, ...)
 
 int CFREDView::internal_error(const char *msg, ...)
 {
-	char buf[2048];
+	SCP_string buf;
 	va_list args;
 
 	va_start(args, msg);
-	vsnprintf(buf, sizeof(buf)-1, msg, args);
+	vsprintf(buf, msg, args);
 	va_end(args);
-	buf[sizeof(buf)-1] = '\0';
 
 	g_err = 1;
 
 #ifndef NDEBUG
-	char buf2[2048];
+	buf += "\n\nThis is an internal error.  Please notify a coder about this.  Click cancel to debug.";
 
-	sprintf(buf2, "%s\n\nThis is an internal error.  Please let Jason\n"
-		"know about this so he can fix it.  Click cancel to debug.", buf);
-
-	if (MessageBox(buf2, "Internal Error", MB_OKCANCEL | MB_ICONEXCLAMATION) == IDCANCEL)
+	if (MessageBox(buf.c_str(), "Internal Error", MB_OKCANCEL | MB_ICONEXCLAMATION) == IDCANCEL)
 		Int3();  // drop to debugger so the problem can be analyzed.
-
 #else
-	MessageBox(buf, "Error", MB_OK | MB_ICONEXCLAMATION);
+	MessageBox(buf.c_str(), "Error", MB_OK | MB_ICONEXCLAMATION);
 #endif
 
 	return -1;
@@ -3527,7 +3550,7 @@ char *error_check_initial_orders(ai_goal *goals, int ship, int wing)
 			case AI_GOAL_DOCK:
 				if (ship < 0)
 					return "Wings can't dock";
-				// fall through..
+				FALLTHROUGH;
 
 			case AI_GOAL_DESTROY_SUBSYSTEM:
 			case AI_GOAL_CHASE:
@@ -3538,6 +3561,7 @@ char *error_check_initial_orders(ai_goal *goals, int ship, int wing)
 			case AI_GOAL_DISABLE_SHIP_TACTICAL:
 			case AI_GOAL_EVADE_SHIP:
 			case AI_GOAL_STAY_NEAR_SHIP:
+			case AI_GOAL_FORM_ON_WING:
 			case AI_GOAL_IGNORE:
 			case AI_GOAL_IGNORE_NEW:
 				flag = 2;

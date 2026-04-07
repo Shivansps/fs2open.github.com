@@ -240,7 +240,15 @@ namespace animation {
 			}
 
 			m_animation->calculateAnimation(applyBuffer, instanceData.time, pmi->id);
-			m_animation->executeAnimation(applyBuffer, MIN(prevTime, instanceData.time), MAX(prevTime, instanceData.time), instanceData.canonicalDirection, pmi->id);
+
+			if ((prevTime > instanceData.time && instanceData.canonicalDirection == ModelAnimationDirection::FWD) || (prevTime < instanceData.time && instanceData.canonicalDirection == ModelAnimationDirection::RWD)) {
+				//We _should_ have been going FWD, but we appear to have gone backwards (or we _should_ have been going FWD, but we appear to have gone forwards).
+				//This indicates that we looped around, or that we did a hard reset. Unfortunately, we can't quite differentiate that.
+				m_animation->executeAnimation(applyBuffer, 0.0f, MIN(prevTime, instanceData.time), instanceData.canonicalDirection, pmi->id);
+				m_animation->executeAnimation(applyBuffer, MAX(prevTime, instanceData.time), instanceData.duration, instanceData.canonicalDirection, pmi->id);
+			}
+			else
+				m_animation->executeAnimation(applyBuffer, MIN(prevTime, instanceData.time), MAX(prevTime, instanceData.time), instanceData.canonicalDirection, pmi->id);
 			break;
 
 		case ModelAnimationState::PAUSED:
@@ -412,7 +420,8 @@ namespace animation {
 	}
 
 	void ModelAnimationSubmodel::reset(polymodel_instance* pmi) {
-		if(!m_submodel)
+		auto cache_it = m_submodel.find(pmi->model_num);
+		if (cache_it == m_submodel.end())
 			findSubmodel(pmi);
 
 		auto dataIt = m_initialData.find({ pmi->id });
@@ -507,8 +516,9 @@ namespace animation {
 		polymodel* pm = model_get(pmi->model_num);
 
 		//Do we have a submodel number already cached?
-		if (m_submodel)
-			submodelNumber = *m_submodel;
+		auto cache_it = m_submodel.find(pm->id);
+		if (cache_it != m_submodel.end())
+			submodelNumber = cache_it->second;
 		//We seem to have a submodel name
 		else {
 			for (int i = 0; i < pm->n_models; i++) {
@@ -518,7 +528,7 @@ namespace animation {
 				}
 			}
 
-			m_submodel = submodelNumber;
+			m_submodel.emplace(pm->id, submodelNumber);
 		}
 
 		//If the model does not exist, return null. The system is expected to just silently tolerate this,
@@ -551,11 +561,12 @@ namespace animation {
 		polymodel* pm = model_get(pmi->model_num);
 
 		//Do we have a submodel number already cached?
-		if (m_submodel)
-			submodelNumber = *m_submodel;
+		auto cache_it = m_submodel.find(pm->id);
+		if (cache_it != m_submodel.end())
+			submodelNumber = cache_it->second;
 		//Do we know if we were told to find the barrel submodel or not? This implies we have a subsystem name, not a submodel name
 		else {
-			ship_info* sip = nullptr;
+			const ship_info* sip = nullptr;
 			if (pmi->objnum >= 0) {
 				sip = &Ship_info[Ships[Objects[pmi->objnum].instance].ship_info_index];
 			}
@@ -571,7 +582,7 @@ namespace animation {
 
 			for (int i = 0; i < sip->n_subsystems; i++) {
 				if (!subsystem_stricmp(sip->subsystems[i].subobj_name, m_name.c_str())) {
-					if ((bool)m_findBarrel) {
+					if (m_findBarrel) {
 						//Check if the barrel subobj is a dedicated existing subobj or just the base turret.
 						if (sip->subsystems[i].turret_gun_sobj != sip->subsystems[i].subobj_num)
 							submodelNumber = sip->subsystems[i].turret_gun_sobj;
@@ -584,7 +595,7 @@ namespace animation {
 				}
 			}
 
-			m_submodel = submodelNumber;
+			m_submodel.emplace(pm->id, submodelNumber);
 		}
 
 		//If the model does not exist, return null. The system is expected to just silently tolerate this,
@@ -674,7 +685,7 @@ namespace animation {
 
 		for (const auto& submodel : other.m_submodels) {
 			auto newSubmodel = std::shared_ptr<ModelAnimationSubmodel>(submodel->copy());
-			newSubmodel->m_submodel = std::nullopt;
+			newSubmodel->m_submodel = {};
 			m_submodels.push_back(newSubmodel);
 		}
 
@@ -1479,7 +1490,7 @@ namespace animation {
 						curve = Curves[curve_id];
 				}
 
-				driver = [&remap_driver_source, &curve](ModelAnimation &, ModelAnimation::instance_data &instance, polymodel_instance *pmi, float) {
+				driver = [remap_driver_source, curve](ModelAnimation &, ModelAnimation::instance_data &instance, polymodel_instance *pmi, float) {
 					float oldFrametime = instance.time;
 					instance.time = curve ? curve->GetValue(remap_driver_source(pmi)) : remap_driver_source(pmi);
 					CLAMP(instance.time, 0.0f, instance.duration);

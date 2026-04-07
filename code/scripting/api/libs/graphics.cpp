@@ -185,7 +185,7 @@ ADE_INDEXER(l_Graphics_Posteffects, "number index", "Gets the name of the specif
 	if (index >= (int) names.size())
 		return ade_set_error(L, "s", "");
 
-	return ade_set_args(L, "s", const_cast<char*>(names[index].c_str()));
+	return ade_set_args(L, "s", names[index].c_str());
 }
 
 ADE_FUNC(__len, l_Graphics_Posteffects, nullptr, "Gets the number of available post-processing effects", "number", "number of post-processing effects or 0 on error")
@@ -1319,6 +1319,7 @@ ADE_FUNC(drawOffscreenIndicator, l_Graphics, "object Object, [boolean draw=true,
 			int dir;
 			float tri_separation;
 
+			offscreengauge->resetClip();
 			offscreengauge->calculatePosition(&target_point, &targetp->pos, &outpoint, &dir, &tri_separation);
 
 			if (draw) {
@@ -1662,7 +1663,7 @@ ADE_FUNC(createTexture, l_Graphics, "[number Width=512, number Height=512, enume
 			t = BMP_FLAG_RENDER_TARGET_DYNAMIC;
 	}
 
-	int idx = bm_make_render_target(w, h, t);
+	int idx = bm_make_render_target(w, h, t | BMP_FLAG_RENDER_TARGET_DEPTH_ATTACHMENT);
 
 	if(idx < 0)
 		return ade_set_error(L, "o", l_Texture.Set(texture_h()));

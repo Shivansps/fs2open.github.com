@@ -13,8 +13,11 @@
 #include <mission/missiongoals.h>
 #include <asteroid/asteroid.h>
 #include <jumpnode/jumpnode.h>
+#include <prop/prop.h>
 #include <util.h>
 #include <mission/missionmessage.h>
+#include <missioneditor/common.h>
+#include <missioneditor/missionsave.h>
 #include <gamesnd/eventmusic.h>
 #include <starfield/nebula.h>
 #include <object/objectdock.h>
@@ -237,22 +240,22 @@ bool Editor::loadMission(const std::string& mission_name, int flags) {
 	}
 
 	// message 2: unknown classes
-	if ((Num_unknown_ship_classes > 0) || (Num_unknown_weapon_classes > 0) || (Num_unknown_loadout_classes > 0)) {
+	if ((Num_unknown_ship_classes > 0) || (Num_unknown_prop_classes > 0) || (Num_unknown_weapon_classes > 0) || (Num_unknown_loadout_classes > 0)) {
 		if (flags & MPF_IMPORT_FSM) {
 			SCP_string msg;
 			sprintf(msg,
-					"Fred encountered unknown ship/weapon classes when importing \"%s\" (path \"%s\"). You will have to manually edit the converted mission to correct this.",
+					"Fred encountered unknown ship/prop/weapon classes when importing \"%s\" (path \"%s\"). You will have to manually edit the converted mission to correct this.",
 					The_mission.name,
 					filepath.c_str());
 
 			_lastActiveViewport->dialogProvider->showButtonDialog(DialogType::Warning,
-																  "Unknown Ship classes",
+																  "Unknown object classes",
 																  msg,
 																  { DialogButton::Ok });
 		} else {
 			_lastActiveViewport->dialogProvider->showButtonDialog(DialogType::Warning,
-																  "Unknown Ship classes",
-																  "Fred encountered unknown ship/weapon classes when parsing the mission file. This may be due to mission disk data you do not have.",
+																  "Unknown object classes",
+																  "Fred encountered unknown ship/prop/weapon classes when parsing the mission file. This may be due to mission disk data you do not have.",
 																  { DialogButton::Ok });
 		}
 	}
@@ -397,6 +400,27 @@ bool Editor::loadMission(const std::string& mission_name, int flags) {
 		viewport->view_orient = Parse_viewer_orient;
 		viewport->view_pos = Parse_viewer_pos;
 	}
+
+	if (flags & MPF_IS_TEMPLATE) {
+		// reset fields that should not carry over from the template source
+		strcpy_s(The_mission.name, "Untitled");
+		The_mission.author = getUsername();
+
+		time_t currentTime;
+		time(&currentTime);
+		auto timeinfo = localtime(&currentTime);
+		time_to_mission_info_string(timeinfo, The_mission.created, DATE_TIME_LENGTH - 1);
+		strcpy_s(The_mission.modified, The_mission.created);
+
+		strcpy_s(The_mission.notes, "This is a FRED2_OPEN created mission.");
+		strcpy_s(The_mission.mission_desc, "Put mission description here");
+
+		for (auto& viewport : _viewports) {
+			viewport->resetView();
+			viewport->resetViewPhysics();
+		}
+	}
+
 	stars_post_level_init();
 
 	missionLoaded(filepath);
@@ -408,6 +432,14 @@ bool Editor::loadMission(const std::string& mission_name, int flags) {
 	}
 
 	return true;
+}
+void Editor::clean_up_selections() {
+#if 0
+	if (Briefing_dialog)
+		Briefing_dialog->icon_select(-1);
+#endif
+
+	unmark_all();
 }
 void Editor::unmark_all() {
 	if (numMarked > 0) {
@@ -467,6 +499,7 @@ void Editor::unmarkObject(int obj) {
 
 void Editor::clearMission(bool fast_reload) {
 	// clean up everything we need to before we reset back to defaults.
+	clean_up_selections();
 #if 0
     if (Briefing_dialog){
         Briefing_dialog->reset_editor();
@@ -483,6 +516,7 @@ void Editor::clearMission(bool fast_reload) {
 		model_free_all();                // Free all existing models
 
 	ai_init();
+	props_level_init();
 	asteroid_level_init();
 	ship_level_init();
 	nebula_init(Nebula_index, Nebula_pitch, Nebula_bank, Nebula_heading);
@@ -1006,8 +1040,7 @@ int Editor::common_object_delete(int obj) {
 		waypoint* wpt = find_waypoint_with_instance(Objects[obj].instance);
 		Assert(wpt != NULL);
 		waypoint_list* wp_list = wpt->get_parent_list();
-		int index = calc_waypoint_list_index(Objects[obj].instance);
-		int count = (int) wp_list->get_waypoints().size();
+		auto count = wp_list->get_waypoints().size();
 
 		// we'll end up deleting the path, so check for path references
 		if (count == 1) {
@@ -1019,7 +1052,7 @@ int Editor::common_object_delete(int obj) {
 		}
 
 		// check for waypoint references
-		sprintf(msg, "%s:%d", wp_list->get_name(), index + 1);
+		waypoint_stuff_name(msg, *wpt);
 		name = msg;
 		r = reference_handler(name, sexp_ref_type::WAYPOINT, obj);
 		if (r) {
@@ -1033,8 +1066,23 @@ int Editor::common_object_delete(int obj) {
 			invalidate_references(wp_list->get_name(), sexp_ref_type::WAYPOINT_PATH);
 		}
 
+		// save info needed to update shifted waypoint references after removal
+		int deleted_index = wpt->get_index();
+		char list_name[NAME_LENGTH];
+		strcpy_s(list_name, wp_list->get_name());
+
 		// the actual removal code has been moved to this function in waypoints.cpp
 		waypoint_remove(wpt);
+
+		// update SEXP and AI goal references for waypoints that shifted down
+		for (int wi = deleted_index; wi < (int)count - 1; wi++) {
+			char old_wpt_name[NAME_LENGTH];
+			char new_wpt_name[NAME_LENGTH];
+			waypoint_stuff_name(old_wpt_name, list_name, wi + 2);	// old 1-based number
+			waypoint_stuff_name(new_wpt_name, list_name, wi + 1);	// new 1-based number
+			update_sexp_references(old_wpt_name, new_wpt_name);
+			ai_update_goal_references(sexp_ref_type::WAYPOINT, old_wpt_name, new_wpt_name);
+		}
 
 	} else if (type == OBJ_SHIP) {
 		name = Ships[Objects[obj].instance].ship_name;
@@ -1074,7 +1122,7 @@ int Editor::common_object_delete(int obj) {
 
 	} else if (type == OBJ_POINT) {
 		/*
-		 TODO: Implement vriefing dialog
+		 TODO: Implement briefing dialog
 
 		Assert(Briefing_dialog);
 		Briefing_dialog->delete_icon(Objects[obj].instance);
@@ -1489,13 +1537,17 @@ int Editor::delete_ship_from_wing(int ship) {
 				}
 			}
 
-			if (Wings[wing].threshold >= Wings[wing].wave_count) {
-				Wings[wing].threshold = Wings[wing].wave_count - 1;
+			const auto max_threshold_before = MAX_SHIPS_PER_WING - Wings[wing].wave_count;
+			if (Wings[wing].threshold > max_threshold_before) {
+				Wings[wing].threshold = max_threshold_before;
 			}
 
 			Wings[wing].wave_count--;
-			if (Wings[wing].wave_count && (Wings[wing].threshold >= Wings[wing].wave_count)) {
-				Wings[wing].threshold = Wings[wing].wave_count - 1;
+			if (Wings[wing].wave_count) {
+				const auto max_threshold_after = MAX_SHIPS_PER_WING - Wings[wing].wave_count;
+				if (Wings[wing].threshold > max_threshold_after) {
+					Wings[wing].threshold = max_threshold_after;
+				}
 			}
 		}
 	}
@@ -1965,7 +2017,7 @@ int Editor::global_error_check_impl() {
 	object* ptr;
 	brief_stage* sp;
 	SCP_string anchor_message;
-	SCP_set<int> anchor_shipnums_checked;
+	SCP_set<anchor_t> anchors_checked;
 
 	g_err = multi = 0;
 	if (The_mission.game_type & MISSION_TYPE_MULTI) {
@@ -2094,17 +2146,11 @@ int Editor::global_error_check_impl() {
 				return internal_error("Object references an illegal waypoint number in path");
 			}
 
-			sprintf(buf, "%s:%d", wp_list->get_name(), waypoint_num + 1);
+			waypoint_stuff_name(buf, i);
 			names[obj_count] = new char[strlen(buf) + 1];
 			strcpy(names[obj_count], buf);
 			err_flags[obj_count] = 1;
 		} else if (ptr->type == OBJ_POINT) {
-			// TODO: Fix this once the briefing dialog exists
-			/*
-			if (!Briefing_dialog) {
-				return internal_error("Briefing icon detected when not in briefing edit mode");
-			}
-			 */
 			//Shouldn't be needed anymore.
 			//If we really do need it, call me and I'll write a is_valid function for jumpnodes -WMC
 		} else if (ptr->type == OBJ_JUMP_NODE) {
@@ -2155,13 +2201,13 @@ int Editor::global_error_check_impl() {
 			}
 
 			if (Ships[i].arrival_location != ArrivalLocation::AT_LOCATION) {
-				if (Ships[i].arrival_anchor < 0) {
+				if (!Ships[i].arrival_anchor.isValid()) {
 					if (error("Ship \"%s\" requires a valid arrival target", Ships[i].ship_name)) {
 						return 1;
 					}
 				}
 				if (Ships[i].arrival_location == ArrivalLocation::FROM_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Ships[i].arrival_anchor, Ships[i].ship_name, true, true);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Ships[i].arrival_anchor, Ships[i].ship_name, true, true);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2169,13 +2215,13 @@ int Editor::global_error_check_impl() {
 			}
 
 			if (Ships[i].departure_location != DepartureLocation::AT_LOCATION) {
-				if (Ships[i].departure_anchor < 0) {
+				if (!Ships[i].departure_anchor.isValid()) {
 					if (error("Ship \"%s\" requires a valid departure target", Ships[i].ship_name)) {
 						return 1;
 					}
 				}
 				if (Ships[i].departure_location == DepartureLocation::TO_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Ships[i].departure_anchor, Ships[i].ship_name, true, false);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Ships[i].departure_anchor, Ships[i].ship_name, true, false);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2353,7 +2399,7 @@ int Editor::global_error_check_impl() {
 				return internal_error("Number of waves for \"%s\" is negative", Wings[i].name);
 			}
 
-			if ((Wings[i].threshold < 0) || (Wings[i].threshold >= Wings[i].wave_count)) {
+			if (Wings[i].threshold < 0) {
 				return internal_error("Threshold for \"%s\" is invalid", Wings[i].name);
 			}
 
@@ -2383,13 +2429,13 @@ int Editor::global_error_check_impl() {
 			}
 
 			if (Wings[i].arrival_location != ArrivalLocation::AT_LOCATION) {
-				if (Wings[i].arrival_anchor < 0) {
+				if (!Wings[i].arrival_anchor.isValid()) {
 					if (error("Wing \"%s\" requires a valid arrival target", Wings[i].name)) {
 						return 1;
 					}
 				}
 				if (Wings[i].arrival_location == ArrivalLocation::FROM_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Wings[i].arrival_anchor, Wings[i].name, false, true);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Wings[i].arrival_anchor, Wings[i].name, false, true);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2397,13 +2443,13 @@ int Editor::global_error_check_impl() {
 			}
 
 			if (Wings[i].departure_location != DepartureLocation::AT_LOCATION) {
-				if (Wings[i].departure_anchor < 0) {
+				if (!Wings[i].departure_anchor.isValid()) {
 					if (error("Wing \"%s\" requires a valid departure target", Wings[i].name)) {
 						return 1;
 					}
 				}
 				if (Wings[i].departure_location == DepartureLocation::TO_DOCK_BAY) {
-					check_anchor_for_hangar_bay(anchor_message, anchor_shipnums_checked, Wings[i].departure_anchor, Wings[i].name, false, false);
+					check_anchor_for_hangar_bay(anchor_message, anchors_checked, Wings[i].departure_anchor, Wings[i].name, false, false);
 					if (!anchor_message.empty() && error("%s", anchor_message.c_str())) {
 						return 1;
 					}
@@ -2436,8 +2482,8 @@ int Editor::global_error_check_impl() {
 			}
 		}
 
-		for (j = 0; (uint) j < ii.get_waypoints().size(); j++) {
-			sprintf(buf, "%s:%d", ii.get_name(), j + 1);
+		for (const auto &jj: ii.get_waypoints()) {
+			waypoint_stuff_name(buf, jj);
 			for (z = 0; z < obj_count; z++) {
 				if (names[z]) {
 					if (!stricmp(names[z], buf)) {
@@ -2639,29 +2685,24 @@ int Editor::error(const char* msg, ...) {
 	return 1;
 }
 int Editor::internal_error(const char* msg, ...) {
-	char buf[2048];
+	SCP_string buf;
 	va_list args;
 
 	va_start(args, msg);
-	vsnprintf(buf, sizeof(buf) - 1, msg, args);
+	vsprintf(buf, msg, args);
 	va_end(args);
-	buf[sizeof(buf) - 1] = '\0';
 
 	g_err = 1;
 
 #ifndef NDEBUG
-	char buf2[2048];
-
-	sprintf_safe(buf2, "%s\n\nThis is an internal error.  Please let Jason\n"
-		"know about this so he can fix it.  Click cancel to debug.", buf);
+	buf += "\n\nThis is an internal error.  Please notify a coder about this.  Click cancel to debug.";
 
 	if (_lastActiveViewport->dialogProvider->showButtonDialog(DialogType::Error,
 															  "Internal Error",
-															  buf2,
+															  buf,
 															  { DialogButton::Ok, DialogButton::Cancel })
 		== DialogButton::Cancel)
 		Int3();  // drop to debugger so the problem can be analyzed.
-
 #else
 	_lastActiveViewport->dialogProvider->showButtonDialog(DialogType::Error, "Error", buf, { DialogButton::Ok });
 #endif
@@ -2782,6 +2823,7 @@ const char* Editor::error_check_initial_orders(ai_goal* goals, int ship, int win
 		case AI_GOAL_DISABLE_SHIP_TACTICAL:
 		case AI_GOAL_EVADE_SHIP:
 		case AI_GOAL_STAY_NEAR_SHIP:
+		case AI_GOAL_FORM_ON_WING:
 		case AI_GOAL_IGNORE:
 		case AI_GOAL_IGNORE_NEW:
 			flag = 2;

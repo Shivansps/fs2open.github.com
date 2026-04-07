@@ -20,11 +20,13 @@
 #include "io/timer.h"
 #include "jumpnode/jumpnode.h"
 #include "lighting/lighting.h"
+#include "lighting/lighting_profiles.h"
 #include "math/staticrand.h"
 #include "missionui/missionscreencommon.h"
 #include "mod_table/mod_table.h"
 #include "nebula/neb.h"
 #include "particle/particle.h"
+#include "prop/prop.h"
 #include "render/3dinternal.h"
 #include "render/batching.h"
 #include "ship/ship.h"
@@ -641,6 +643,51 @@ void model_draw_list::render_arcs()
 	gr_zbuffer_set(mode);
 }
 
+void model_draw_list::add_insignia(const model_render_params *params, const polymodel *pm, int detail_level, int bitmap_num)
+{
+	insignia_draw_data new_insignia;
+
+	new_insignia.transform = Transformations.get_transform();
+	new_insignia.pm = pm;
+	new_insignia.detail_level = detail_level;
+	new_insignia.bitmap_num = bitmap_num;
+
+	new_insignia.clip = params->is_clip_plane_set();
+	new_insignia.clip_normal = params->get_clip_plane_normal();
+	new_insignia.clip_position = params->get_clip_plane_pos();
+
+	Insignias.push_back(new_insignia);
+}
+
+void model_draw_list::render_insignia(const insignia_draw_data &insignia_info)
+{
+	if ( insignia_info.clip ) {
+		vec3d tmp;
+		vec3d pos;
+
+		vm_matrix4_get_offset(&pos, &insignia_info.transform);
+		vm_vec_sub(&tmp, &pos, &insignia_info.clip_position);
+		vm_vec_normalize(&tmp);
+
+		if ( vm_vec_dot(&tmp, &insignia_info.clip_normal) < 0.0f) {
+			return;
+		}
+	}
+
+	g3_start_instance_matrix(&insignia_info.transform);	
+
+	model_render_insignias(&insignia_info);
+
+	g3_done_instance(true);
+}
+
+void model_draw_list::render_insignias() const
+{
+	for (const auto& ins : Insignias) {
+		render_insignia(ins);
+	}
+}
+
 void model_draw_list::add_outline(const vertex* vert_array, int n_verts, const color *clr)
 {
 	outline_draw draw_info;
@@ -1121,7 +1168,7 @@ void model_render_buffers(model_draw_list* scene, model_material *rendering_mate
 					texture_maps[TM_BASE_TYPE] = model_interp_get_texture(&tmap->textures[TM_BASE_TYPE], elapsed_time);
 				}
 
-				if ( texture_maps[TM_BASE_TYPE] <= 0 ) {
+				if ( texture_maps[TM_BASE_TYPE] < 0 ) {
 					continue;
 				}
 			}
@@ -1246,7 +1293,7 @@ void model_render_children_buffers(model_draw_list* scene, model_material *rende
 	if ( (model_flags & MR_SHOW_OUTLINE || model_flags & MR_SHOW_OUTLINE_HTL || model_flags & MR_SHOW_OUTLINE_PRESET) && 
 		sm->outline_buffer != nullptr ) {
 		color outline_color = interp->get_color();
-		scene->add_outline(sm->outline_buffer, sm->n_verts_outline, &outline_color);
+		scene->add_outline(sm->outline_buffer.get(), sm->n_verts_outline, &outline_color);
 	} else {
 		if ( trans_buffer && sm->trans_buffer.flags & VB_FLAG_TRANS ) {
 			model_render_buffers(scene, rendering_material, interp, &sm->trans_buffer, pm, mn, detail_level, tmap_flags);
@@ -2382,6 +2429,74 @@ void model_queue_render_thrusters(const model_render_params *interp, const polym
 	}
 }
 
+void model_render_insignias(const insignia_draw_data *insignia_data)
+{
+	auto pm = insignia_data->pm;
+	int detail_level = insignia_data->detail_level;
+	int bitmap_num = insignia_data->bitmap_num;
+
+	// if the model has no insignias, or we don't have a texture, then bail
+	if ( (pm->num_ins <= 0) || (bitmap_num < 0) )
+		return;
+
+	int idx, s_idx;
+	vertex vecs[3];
+	vec3d t1, t2, t3;
+	int i1, i2, i3;
+
+	material insignia_material;
+	insignia_material.set_depth_bias(1);
+
+	// set the proper texture
+	material_set_unlit(&insignia_material, bitmap_num, 0.65f, true, true);
+
+	if ( insignia_data->clip ) {
+		insignia_material.set_clip_plane(insignia_data->clip_normal, insignia_data->clip_position);
+	}
+
+	// otherwise render them	
+	for(idx=0; idx<pm->num_ins; idx++){	
+		// skip insignias not on our detail level
+		if(pm->ins[idx].detail_level != detail_level){
+			continue;
+		}
+
+		for(s_idx=0; s_idx<pm->ins[idx].num_faces; s_idx++){
+			// get vertex indices
+			i1 = pm->ins[idx].faces[s_idx][0];
+			i2 = pm->ins[idx].faces[s_idx][1];
+			i3 = pm->ins[idx].faces[s_idx][2];
+
+			// transform vecs and setup vertices
+			vm_vec_add(&t1, &pm->ins[idx].vecs[i1], &pm->ins[idx].offset);
+			vm_vec_add(&t2, &pm->ins[idx].vecs[i2], &pm->ins[idx].offset);
+			vm_vec_add(&t3, &pm->ins[idx].vecs[i3], &pm->ins[idx].offset);
+
+			g3_transfer_vertex(&vecs[0], &t1);
+			g3_transfer_vertex(&vecs[1], &t2);
+			g3_transfer_vertex(&vecs[2], &t3);
+
+			// setup texture coords
+			vecs[0].texture_position.u = pm->ins[idx].u[s_idx][0];
+			vecs[0].texture_position.v = pm->ins[idx].v[s_idx][0];
+
+			vecs[1].texture_position.u = pm->ins[idx].u[s_idx][1];
+			vecs[1].texture_position.v = pm->ins[idx].v[s_idx][1];
+
+			vecs[2].texture_position.u = pm->ins[idx].u[s_idx][2];
+			vecs[2].texture_position.v = pm->ins[idx].v[s_idx][2];
+
+			light_apply_rgb( &vecs[0].r, &vecs[0].g, &vecs[0].b, &pm->ins[idx].vecs[i1], &pm->ins[idx].norm[i1], 1.5f );
+			light_apply_rgb( &vecs[1].r, &vecs[1].g, &vecs[1].b, &pm->ins[idx].vecs[i2], &pm->ins[idx].norm[i2], 1.5f );
+			light_apply_rgb( &vecs[2].r, &vecs[2].g, &vecs[2].b, &pm->ins[idx].vecs[i3], &pm->ins[idx].norm[i3], 1.5f );
+			vecs[0].a = vecs[1].a = vecs[2].a = 255;
+
+			// draw the polygon
+			g3_render_primitives_colored_textured(&insignia_material, vecs, 3, PRIM_TYPE_TRIFAN, false);
+		}
+	}
+}
+
 SCP_vector<vec3d> Arc_segment_points;
 
 void model_render_arc(const vec3d *v1, const vec3d *v2, const SCP_vector<vec3d> *persistent_arc_points, const color *primary, const color *secondary, float arc_width, ubyte depth_limit)
@@ -2541,6 +2656,7 @@ void model_render_immediate(const model_render_params* render_info, int model_nu
 	}
 
 	model_list.render_outlines();
+	model_list.render_insignias();
 	model_list.render_arcs();
 	
 	gr_zbias(0);
@@ -2816,7 +2932,7 @@ void model_render_queue(const model_render_params* interp, model_draw_list* scen
 
 		if ( (is_outlines_only || is_outlines_only_htl) && pm->submodel[detail_model_num].outline_buffer != NULL ) {
 			color outline_color = interp->get_color();
-			scene->add_outline(pm->submodel[detail_model_num].outline_buffer, pm->submodel[detail_model_num].n_verts_outline, &outline_color);
+			scene->add_outline(pm->submodel[detail_model_num].outline_buffer.get(), pm->submodel[detail_model_num].n_verts_outline, &outline_color);
 		} else {
 			model_render_buffers(scene, &rendering_material, interp, &pm->submodel[detail_model_num].buffer, pm, detail_model_num, detail_level, tmap_flags);
 
@@ -2863,29 +2979,8 @@ void model_render_queue(const model_render_params* interp, model_draw_list* scen
 	}
 
 	// MARKED!
-	if ( !( model_flags & MR_NO_TEXTURING ) && !( model_flags & MR_NO_INSIGNIA) && objnum >= 0 ) {
-		int bitmap_num = interp->get_insignia_bitmap();
-		if ( (!pm->ins.empty()) && (bitmap_num >= 0) ) {
-
-			for (const auto& ins : pm->ins) {
-				// skip insignias not on our detail level
-				if (ins.detail_level != detail_level) {
-					continue;
-				}
-
-				decals::Decal decal;
-				decal.object = &Objects[objnum];
-				decal.position = ins.position;
-				decal.submodel = -1;
-				decal.scale = vec3d{{{ins.diameter, ins.diameter, ins.diameter}}};
-				decal.orig_obj_type = OBJ_SHIP;
-				decal.creation_time = f2fl(Missiontime);
-				decal.lifetime = 1.0f;
-				decal.orientation = ins.orientation;
-				decal.definition_handle = std::make_tuple(bitmap_num, -1, -1);
-				decals::addSingleFrameDecal(std::move(decal));
-			}
-		}
+	if ( !( model_flags & MR_NO_TEXTURING ) && !( model_flags & MR_NO_INSIGNIA) ) {
+		scene->add_insignia(interp, pm, detail_level, interp->get_insignia_bitmap());
 	}
 
 	if ( (model_flags & MR_AUTOCENTER) && (set_autocen) ) {
@@ -2932,6 +3027,7 @@ void model_render_only_glowpoint_lights(const model_render_params* interp, int m
 		objp = &Objects[objnum];
 		int tentative_num = -1;
 
+		// TODO: Add Prop support here
 		if (objp->type == OBJ_SHIP) {
 			shipp = &Ships[objp->instance];
 			tentative_num = shipp->model_instance_num;
@@ -3016,6 +3112,8 @@ void modelinstance_replace_active_texture(polymodel_instance* pmi, const char* o
 bool render_tech_model(tech_render_type model_type, int x1, int y1, int x2, int y2, float zoom, bool lighting, int class_idx, const matrix* orient, const SCP_string &pof_filename, float close_zoom, const vec3d *close_pos, const SCP_string& tcolor)
 {
 
+	lighting_profiles::set_non_mission_profile non_mission_lighting_profile;
+	
 	model_render_params render_info;
 	const vec3d *closeup_pos;
 	float closeup_zoom;
@@ -3042,6 +3140,22 @@ bool render_tech_model(tech_render_type model_type, int x1, int y1, int x2, int 
 			// Make sure model is loaded
 			model_num = model_load(sip, true);
 			render_info.set_replacement_textures(model_num, sip->replacement_textures);
+
+			break;
+
+		case TECH_PROP:
+			prop_info* pip;
+			pip = &Prop_info[class_idx];
+
+			closeup_pos = &pip->closeup_pos;
+			closeup_zoom = pip->closeup_zoom;
+
+			if (pip->flags[Prop::Info_Flags::No_lighting]) {
+				model_lighting = false;
+			}
+
+			// Make sure model is loaded
+			model_num = model_load(pip->pof_file.c_str());
 
 			break;
 

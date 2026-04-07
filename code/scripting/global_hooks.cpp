@@ -165,6 +165,24 @@ const std::shared_ptr<OverridableHook<CollisionConditions>> OnShipCollision = Ov
 		{"Asteroid", "object", "The asteroid object with which the ship collided (only set for asteroid collisions)"},
 		{"ShipB", "ship", "For ship-on-ship collisions, the same as \"Object\" (only set for ship-on-ship collisions)"},
 		{"ShipBSubmodel", "submodel", "For ship-on-ship collisions, the submodel of \"ShipB\" involved in the collision, if \"ShipB\" was the heavier object"},
+		{"Prop", "prop", "The prop object with which the ship collided (only set for prop collisions)."},
+		{"PropSubmodel", "submodel", "The submodel of \"Prop\" involved in the collision."},
+		{"Weapon", "weapon", "The weapon object with which the ship collided (only set for weapon collisions)"},
+		{"Beam", "weapon", "The beam object with which the ship collided (only set for beam collisions)"}});
+
+const std::shared_ptr<OverridableHook<CollisionConditions>> OnPropCollision = OverridableHook<CollisionConditions>::Factory("On Prop Collision",
+	"Invoked when a prop collides with another object. Note: When two props collide this will be called twice, once "
+	"with each prop as the \"Self\" parameter.",
+	{{"Self", "object", "The object the prop collided with."},
+		{"Object", "prop",
+			"The prop that collided with \"Self\". Provided for consistency with other collision hooks."},
+		{"Prop", "prop", "FFor prop-on-object collisions, the same as \"Object\"."},
+		{"Hitpos", "vector", "The world position where the collision was detected"},
+		{"PropSubmodel", "submodel", "The submodel of \"Prop\" involved in the collision, if \"Prop\" was the heavier object"},
+		{"Debris", "object", "The debris object with which the prop collided (only set for debris collisions)"},
+		{"Asteroid", "object", "The asteroid object with which the prop collided (only set for asteroid collisions)"},
+		{"Ship", "ship", "The ship object with which the prop collided (only set for ship collisions)"},
+		{"ShipSubmodel", "submodel", "The submodel of \"Ship\" involved in the collision, if \"Ship\" was the heavier object"},
 		{"Weapon", "weapon", "The weapon object with which the ship collided (only set for weapon collisions)"},
 		{"Beam", "weapon", "The beam object with which the ship collided (only set for beam collisions)"}});
 
@@ -181,6 +199,7 @@ const std::shared_ptr<OverridableHook<CollisionConditions>> OnWeaponCollision = 
 		{"Debris", "object", "The debris object with which the weapon collided (only set for debris collisions)"},
 		{"Asteroid", "object", "The asteroid object with which the weapon collided (only set for asteroid collisions)"},
 		{"Ship", "ship", "The ship object with which the weapon collided (only set for ship collisions)."},
+		{"Prop", "prop", "The prop object with which the weapon collided (only set for prop collisions)."},
 		{"WeaponB", "weapon", "For weapon on weapon collisions, the \"other\" weapon."},
 		{"Beam", "weapon", "The beam object with which the weapon collided (only set for beam collisions)"} });
 
@@ -195,6 +214,7 @@ const std::shared_ptr<OverridableHook<CollisionConditions>> OnDebrisCollision = 
 		{"Hitpos", "vector", "The world position where the collision was detected"},
 		{"Asteroid", "object", "The asteroid object with which the debris collided (only set for asteroid collisions)"},
 		{"Ship", "ship", "The ship object with which the debris collided (only set for ship collisions)."},
+		{"Prop", "prop", "The prop object with which the debris collided (only set for prop collisions)."},
 		{"Weapon", "weapon", "The weapon object with which the debris collided (only set for weapon collisions)"},
 		{"Beam", "weapon", "The beam object with which the debris collided (only set for beam collisions)"} });
 
@@ -209,6 +229,7 @@ const std::shared_ptr<OverridableHook<CollisionConditions>> OnAsteroidCollision 
 		{"Hitpos", "vector", "The world position where the collision was detected"},
 		{"Debris", "object", "The debris object with which the asteroid collided (only set for debris collisions)"},
 		{"Ship", "ship", "The ship object with which the asteroid collided (only set for ship collisions)"},
+		{"Prop", "prop", "The prop object with which the asteroid collided (only set for prop collisions)."},
 		{"Weapon", "weapon", "The weapon object with which the asteroid collided (only set for weapon collisions)"},
 		{"Beam", "weapon", "The beam object with which the asteroid collided (only set for beam collisions)"} });
 
@@ -223,6 +244,7 @@ const std::shared_ptr<OverridableHook<CollisionConditions>> OnBeamCollision = Ov
 		{"Hitpos", "vector", "The world position where the collision was detected"},
 		{"Debris", "object", "The debris object with which the beam collided (only set for debris collisions)"},
 		{"Ship", "ship", "The ship object with which the beam collided (only set for ship collisions)"},
+		{"Prop", "prop", "The prop object with which the beam collided (only set for prop collisions)."},
 		{"Asteroid", "object", "The asteroid object with which the beam collided (only set for asteroid collisions)"},
 		{"Weapon", "weapon", "The weapon object with which the beam collided (only set for weapon collisions)"}});
 
@@ -304,7 +326,7 @@ const std::shared_ptr<Hook<ShipDepartConditions>> OnShipDepart = Hook<ShipDepart
 	"Invoked when a ship departs the mission without being destroyed.",
 	{
 		{"Ship", "ship", "The ship departing the mission"},
-		{"JumpNode", "string", "The name of the jump node the ship jumped out of. Can be nil."},
+		{"JumpNode", "string", "The name of the jump node the ship was in when it departed. Can be nil."},
 		{"Method", "ship", "The name of the method the ship used to depart. One of: 'SHIP_DEPARTED', 'SHIP_DEPARTED_WARP', 'SHIP_DEPARTED_BAY', 'SHIP_VANISHED', 'SHIP_DEPARTED_REDALERT'."},
 	});
 

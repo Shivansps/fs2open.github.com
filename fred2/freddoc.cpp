@@ -26,7 +26,6 @@
 #include "MainFrm.h"
 #include "Management.h"
 #include "MessageEditorDlg.h"
-#include "MissionSave.h"
 
 #include "ai/ai.h"
 #include "ai/aigoals.h"
@@ -109,10 +108,7 @@ bool CFREDDoc::autoload() {
 		return 0;
 	fclose(fp);
 
-	if (Briefing_dialog) {
-		// clean things up first
-		Briefing_dialog->icon_select(-1);
-	}
+	clean_up_selections();
 
 	// Load Backup.002
 	r = load_mission(name, MPF_FAST_RELOAD);
@@ -139,7 +135,20 @@ bool CFREDDoc::autoload() {
 
 int CFREDDoc::autosave(char *desc) {
 	int i;
-	CFred_mission_save save;
+	Fred_mission_save save;
+	if (Mission_save_format == FSO_FORMAT_RETAIL) {
+		save.set_save_format(MissionFormat::RETAIL);
+	} else if (Mission_save_format == FSO_FORMAT_COMPATIBILITY_MODE) {
+		save.set_save_format(MissionFormat::COMPATIBILITY_MODE);
+	} else {
+		save.set_save_format(MissionFormat::STANDARD);
+	}
+	save.set_always_save_display_names(Always_save_display_names);
+	save.set_view_pos(view_pos);
+	save.set_view_orient(view_orient);
+	save.set_fred_alt_names(Fred_alt_names);
+	save.set_fred_callsigns(Fred_callsigns);
+
 	CWaitCursor wait;
 
 	if (Autosave_disabled) {
@@ -246,13 +255,13 @@ bool CFREDDoc::load_mission(const char *pathname, int flags) {
 	}
 
 	// message 2: unknown classes
-	if ((Num_unknown_ship_classes > 0) || (Num_unknown_weapon_classes > 0) || (Num_unknown_loadout_classes > 0)) {
+	if ((Num_unknown_ship_classes > 0) || (Num_unknown_prop_classes > 0) || (Num_unknown_weapon_classes > 0) || (Num_unknown_loadout_classes > 0)) {
 		if (flags & MPF_IMPORT_FSM) {
 			char msg[256];
-			sprintf(msg, "Fred encountered unknown ship/weapon classes when importing \"%s\" (path \"%s\"). You will have to manually edit the converted mission to correct this.", The_mission.name, pathname);
+			sprintf(msg, "Fred encountered unknown ship/prop/weapon classes when importing \"%s\" (path \"%s\"). You will have to manually edit the converted mission to correct this.", The_mission.name, pathname);
 			Fred_view_wnd->MessageBox(msg);
 		} else {
-			Fred_view_wnd->MessageBox("Fred encountered unknown ship/weapon classes when parsing the mission file. This may be due to mission disk data you do not have.");
+			Fred_view_wnd->MessageBox("Fred encountered unknown ship/prop/weapon classes when parsing the mission file. This may be due to mission disk data you do not have.");
 		}
 	}
 
@@ -470,10 +479,6 @@ void CFREDDoc::OnFileImportFSM() {
 	if (*dest_directory == '\0')
 		return;
 
-	// clean things up first
-	if (Briefing_dialog)
-		Briefing_dialog->icon_select(-1);
-
 	clear_mission(true);
 
 	int num_files = 0;
@@ -489,7 +494,19 @@ void CFREDDoc::OnFileImportFSM() {
 
 		CString fs1_path_mfc(dlgFile.GetNextPathName(pos));
 		num_files++;
-		CFred_mission_save save;
+		Fred_mission_save save;
+		if (Mission_save_format == FSO_FORMAT_RETAIL) {
+			save.set_save_format(MissionFormat::RETAIL);
+		} else if (Mission_save_format == FSO_FORMAT_COMPATIBILITY_MODE) {
+			save.set_save_format(MissionFormat::COMPATIBILITY_MODE);
+		} else {
+			save.set_save_format(MissionFormat::STANDARD);
+		}
+		save.set_always_save_display_names(Always_save_display_names);
+		save.set_view_pos(view_pos);
+		save.set_view_orient(view_orient);
+		save.set_fred_alt_names(Fred_alt_names);
+		save.set_fred_callsigns(Fred_callsigns);
 
 		DWORD attrib;
 		FILE *fp;
@@ -587,8 +604,8 @@ BOOL CFREDDoc::OnNewDocument() {
 
 BOOL CFREDDoc::OnOpenDocument(LPCTSTR pathname)
 {
-	if (Briefing_dialog)
-		Briefing_dialog->icon_select(-1);  // clean things up first
+	// don't process any objects if the window focus is lost and reacquired
+	clean_up_selections();
 
 	auto sep_ch = strrchr(pathname, '\\');
 	auto filename = (sep_ch != nullptr) ? (sep_ch + 1) : pathname;
@@ -672,7 +689,20 @@ BOOL CFREDDoc::OnOpenDocument(LPCTSTR pathname)
 #endif
 
 BOOL CFREDDoc::OnSaveDocument(LPCTSTR pathname) {
-	CFred_mission_save save;
+	Fred_mission_save save;
+	if (Mission_save_format == FSO_FORMAT_RETAIL) {
+		save.set_save_format(MissionFormat::RETAIL);
+	} else if (Mission_save_format == FSO_FORMAT_COMPATIBILITY_MODE) {
+		save.set_save_format(MissionFormat::COMPATIBILITY_MODE);
+	} else {
+		save.set_save_format(MissionFormat::STANDARD);
+	}
+	save.set_always_save_display_names(Always_save_display_names);
+	save.set_view_pos(view_pos);
+	save.set_view_orient(view_orient);
+	save.set_fred_alt_names(Fred_alt_names);
+	save.set_fred_callsigns(Fred_callsigns);
+
 	DWORD attrib;
 	FILE *fp;
 

@@ -363,7 +363,7 @@ extern SCP_vector<weapon_info> Weapon_info;
 struct weapon_info
 {
 	char	name[NAME_LENGTH];				// name of this weapon
-	char	display_name[NAME_LENGTH];		// display name of this weapon
+	SCP_string display_name;				// display name of this weapon
 	char	title[WEAPON_TITLE_LEN];		// official title of weapon (used by tooltips)
 	std::unique_ptr<char[]> desc;				// weapon's description (used by tooltips)
 	char	altSubsysName[NAME_LENGTH];        // rename turret to this if this is the turrets first weapon
@@ -627,6 +627,9 @@ struct weapon_info
 	float cm_heat_effectiveness;
 	float cm_effective_rad;
 	float cm_detonation_rad;
+	vec3d cm_launch_vec;
+	float cm_launch_speed;
+	float cm_launch_variance;
 	bool  cm_kill_single;       // should the countermeasure kill just the single decoyed missile within CMEASURE_DETONATE_DISTANCE?
 	int   cmeasure_timer_interval;	// how many milliseconds between pulses
 	int cmeasure_firewait;						// delay in milliseconds between countermeasure firing --wookieejedi
@@ -1022,7 +1025,6 @@ void	weapon_area_apply_blast(const vec3d *force_apply_pos, object *ship_objp, co
 int	weapon_area_calc_damage(const object *objp, const vec3d *pos, float inner_rad, float outer_rad, float max_blast, float max_damage,
 										float *blast, float *damage, float limit);
 
-missile_obj *missile_obj_return_address(int index);
 void find_homing_object_cmeasures(const SCP_vector<object*> &cmeasure_list);
 
 // THE FOLLOWING FUNCTION IS IN SHIP.CPP!!!!
@@ -1083,6 +1085,16 @@ bool weapon_multilock_can_lock_on_target(object* shooter, object* target_objp, w
 
 // Return whether the weapon has a target it is currently homing on
 bool weapon_has_homing_object(weapon* wp);
+
+// Variant type for weapon stat values: numeric, boolean, or string
+using weapon_stat_value = std::variant<float, bool, SCP_string>;
+
+// Returns a map of combat stats for a single weapon (keyed by column name).
+// Works for any weapon type (primary, secondary, beam).
+SCP_map<SCP_string, weapon_stat_value> weapon_get_stats(const weapon_info &wi);
+
+// Returns MediaVP-style human-readable text block for a single weapon.
+SCP_string weapon_get_stats_text(const weapon_info &wi);
 
 
 #endif

@@ -65,6 +65,7 @@ void parse_sunglare_func()
 	Post_processing_enable_sunglare = enabled;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto LightshaftsOption = options::OptionBuilder<bool>("Graphics.Lightshafts",
                      std::pair<const char*, int>{"Lightshafts", 1724},
                      std::pair<const char*, int>{"Enables or disables lightshafts (requires post-processing)", 1725})
@@ -76,6 +77,7 @@ auto LightshaftsOption = options::OptionBuilder<bool>("Graphics.Lightshafts",
                      .parser(parse_lightshafts_func)
                      .finish();
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 auto SunglareOption = options::OptionBuilder<bool>("Graphics.Sunglare",
 					std::pair<const char*, int>{"Sunglare", 1880},
 					std::pair<const char*, int>{"Enables or disables glare from suns", 1881})
@@ -97,6 +99,7 @@ void parse_bloom_intensity_func()
 	Post_processing_bloom_intensity = value;
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto BloomIntensityOption __UNUSED = options::OptionBuilder<int>("Graphics.BloomIntensity",
                      std::pair<const char*, int>{"Bloom intensity", 1701},
                      std::pair<const char*, int>{"Sets the bloom intensity (requires post-processing)", 1702})

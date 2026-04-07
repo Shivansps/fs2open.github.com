@@ -242,10 +242,11 @@ const SCP_vector<std::pair<int, std::pair<const char*, int>>> DetailLevelValues 
 
 static void parse_model_detail_func()
 {
-	int value[static_cast<int>(DefaultDetailPreset::Num_detail_presets)];
-	stuff_int_list(value, static_cast<int>(DefaultDetailPreset::Num_detail_presets), RAW_INTEGER_TYPE);
+	constexpr int num_detail_presets = static_cast<int>(DefaultDetailPreset::Num_detail_presets);
+	int value[num_detail_presets];
+	stuff_int_list(value, num_detail_presets, ParseLookupType::RAW_INTEGER_TYPE);
 
-	for (int i = 0; i < static_cast<int>(DefaultDetailPreset::Num_detail_presets); i++) {
+	for (int i = 0; i < num_detail_presets; i++) {
 
 		if (value[i] < 0 || value[i] > MAX_DETAIL_VALUE) {
 			error_display(0, "%i is an invalid detail level value!", value[i]);
@@ -255,6 +256,7 @@ static void parse_model_detail_func()
 	}
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 const auto ModelDetailOption __UNUSED = options::OptionBuilder<int>("Graphics.Detail",
                      std::pair<const char*, int>{"Model Detail", 1739},
                      std::pair<const char*, int>{"Detail level of models", 1740})
@@ -272,10 +274,11 @@ const auto ModelDetailOption __UNUSED = options::OptionBuilder<int>("Graphics.De
 
 static void parse_texture_detail_func()
 {
-	int value[static_cast<int>(DefaultDetailPreset::Num_detail_presets)];
-	stuff_int_list(value, static_cast<int>(DefaultDetailPreset::Num_detail_presets), RAW_INTEGER_TYPE);
+	constexpr int num_detail_presets = static_cast<int>(DefaultDetailPreset::Num_detail_presets);
+	int value[num_detail_presets];
+	stuff_int_list(value, num_detail_presets, ParseLookupType::RAW_INTEGER_TYPE);
 
-	for (int i = 0; i < static_cast<int>(DefaultDetailPreset::Num_detail_presets); i++) {
+	for (int i = 0; i < num_detail_presets; i++) {
 
 		if (value[i] < 0 || value[i] > MAX_DETAIL_VALUE) {
 			error_display(0, "%i is an invalid detail level value!", value[i]);
@@ -285,6 +288,7 @@ static void parse_texture_detail_func()
 	}
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 const auto TexturesOption __UNUSED = options::OptionBuilder<int>("Graphics.Texture",
                      std::pair<const char*, int>{"3D Hardware Textures", 1362},
                      std::pair<const char*, int>{"Level of detail of textures", 1720})
@@ -302,10 +306,11 @@ const auto TexturesOption __UNUSED = options::OptionBuilder<int>("Graphics.Textu
 
 static void parse_particles_detail_func()
 {
-	int value[static_cast<int>(DefaultDetailPreset::Num_detail_presets)];
-	stuff_int_list(value, static_cast<int>(DefaultDetailPreset::Num_detail_presets), RAW_INTEGER_TYPE);
+	constexpr int num_detail_presets = static_cast<int>(DefaultDetailPreset::Num_detail_presets);
+	int value[num_detail_presets];
+	stuff_int_list(value, num_detail_presets, ParseLookupType::RAW_INTEGER_TYPE);
 
-	for (int i = 0; i < static_cast<int>(DefaultDetailPreset::Num_detail_presets); i++) {
+	for (int i = 0; i < num_detail_presets; i++) {
 
 		if (value[i] < 0 || value[i] > MAX_DETAIL_VALUE) {
 			error_display(0, "%i is an invalid detail level value!", value[i]);
@@ -315,6 +320,7 @@ static void parse_particles_detail_func()
 	}
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 const auto ParticlesOption __UNUSED = options::OptionBuilder<int>("Graphics.Particles",
                      std::pair<const char*, int>{"Particles", 1363},
                      std::pair<const char*, int>{"Level of detail for particles", 1717})
@@ -332,10 +338,11 @@ const auto ParticlesOption __UNUSED = options::OptionBuilder<int>("Graphics.Part
 
 static void parse_debris_detail_func()
 {
-	int value[static_cast<int>(DefaultDetailPreset::Num_detail_presets)];
-	stuff_int_list(value, static_cast<int>(DefaultDetailPreset::Num_detail_presets), RAW_INTEGER_TYPE);
+	constexpr int num_detail_presets = static_cast<int>(DefaultDetailPreset::Num_detail_presets);
+	int value[num_detail_presets];
+	stuff_int_list(value, num_detail_presets, ParseLookupType::RAW_INTEGER_TYPE);
 
-	for (int i = 0; i < static_cast<int>(DefaultDetailPreset::Num_detail_presets); i++) {
+	for (int i = 0; i < num_detail_presets; i++) {
 
 		if (value[i] < 0 || value[i] > MAX_DETAIL_VALUE) {
 			error_display(0, "%i is an invalid detail level value!", value[i]);
@@ -345,7 +352,8 @@ static void parse_debris_detail_func()
 	}
 }
 
-const auto SmallDebrisOption __UNUSED = options::OptionBuilder<int>("Graphics.SmallDebris", 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
+const auto SmallDebrisOption __UNUSED = options::OptionBuilder<int>("Graphics.SmallDebris",
                      std::pair<const char*, int>{"Impact Effects", 1364}, 
                      std::pair<const char*, int>{"Level of detail of impact effects", 1743})
                      .category(std::make_pair("Graphics", 1825))
@@ -362,10 +370,11 @@ const auto SmallDebrisOption __UNUSED = options::OptionBuilder<int>("Graphics.Sm
 
 static void parse_shield_detail_func()
 {
-	int value[static_cast<int>(DefaultDetailPreset::Num_detail_presets)];
-	stuff_int_list(value, static_cast<int>(DefaultDetailPreset::Num_detail_presets), RAW_INTEGER_TYPE);
+	constexpr int num_detail_presets = static_cast<int>(DefaultDetailPreset::Num_detail_presets);
+	int value[num_detail_presets];
+	stuff_int_list(value, num_detail_presets, ParseLookupType::RAW_INTEGER_TYPE);
 
-	for (int i = 0; i < static_cast<int>(DefaultDetailPreset::Num_detail_presets); i++) {
+	for (int i = 0; i < num_detail_presets; i++) {
 
 		if (value[i] < 0 || value[i] > MAX_DETAIL_VALUE) {
 			error_display(0, "%i is an invalid detail level value!", value[i]);
@@ -375,6 +384,7 @@ static void parse_shield_detail_func()
 	}
 }
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 const auto ShieldEffectsOption __UNUSED = options::OptionBuilder<int>("Graphics.ShieldEffects",
                      std::pair<const char*, int>{"Shield Hit Effects", 1718},
                      std::pair<const char*, int>{"Level of detail of shield impacts", 1719})
@@ -392,10 +402,11 @@ const auto ShieldEffectsOption __UNUSED = options::OptionBuilder<int>("Graphics.
 
 static void parse_stars_detail_func()
 {
-	int value[static_cast<int>(DefaultDetailPreset::Num_detail_presets)];
-	stuff_int_list(value, static_cast<int>(DefaultDetailPreset::Num_detail_presets), RAW_INTEGER_TYPE);
+	constexpr int num_detail_presets = static_cast<int>(DefaultDetailPreset::Num_detail_presets);
+	int value[num_detail_presets];
+	stuff_int_list(value, num_detail_presets, ParseLookupType::RAW_INTEGER_TYPE);
 
-	for (int i = 0; i < static_cast<int>(DefaultDetailPreset::Num_detail_presets); i++) {
+	for (int i = 0; i < num_detail_presets; i++) {
 
 		if (value[i] < 0 || value[i] > MAX_DETAIL_VALUE) {
 			error_display(0, "%i is an invalid detail level value!", value[i]);
@@ -405,7 +416,8 @@ static void parse_stars_detail_func()
 	}
 }
 
-const auto StarsOption __UNUSED = options::OptionBuilder<int>("Graphics.Stars", 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
+const auto StarsOption __UNUSED = options::OptionBuilder<int>("Graphics.Stars",
                      std::pair<const char*, int>{"Stars", 1366}, 
                      std::pair<const char*, int>{"Number of stars in the mission", 1698})
                      .importance(2)

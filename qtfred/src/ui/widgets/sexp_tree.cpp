@@ -22,6 +22,7 @@
 #include "mission/missionmessage.h"
 #include "mission/missioncampaign.h"
 #include "mission/missionparse.h"
+#include "missioneditor/common.h"
 #include "hud/hudsquadmsg.h"
 #include "stats/medals.h"
 #include "controlconfig/controlsconfig.h"
@@ -43,6 +44,7 @@
 #include "localization/localize.h"
 #include "mission/missiongoals.h"
 #include "ship/ship.h"
+#include "prop/prop.h"
 
 #include <ui/util/menu.h>
 #include <ui/util/SignalBlockers.h>
@@ -1037,11 +1039,10 @@ int sexp_tree::add_default_operator(int op_index, int argnum) {
 		add_or_replace_operator(item.op);
 		item_index = index;
 	} else {
+		int sexp_var_index;
 		// special case for sexps that take variables
 		const int op_type = query_operator_argument_type(op_index, argnum);
-		if (op_type == OPF_VARIABLE_NAME) {
-			int sexp_var_index = get_index_sexp_variable_name(item.text);
-			Assert(sexp_var_index != -1);
+		if ((op_type == OPF_VARIABLE_NAME) && ((sexp_var_index = get_index_sexp_variable_name(item.text)) >= 0)) {
 			int type = SEXPT_VALID | SEXPT_VARIABLE;
 			if (Sexp_variables[sexp_var_index].type & SEXP_VARIABLE_STRING) {
 				type |= SEXPT_STRING;
@@ -1055,21 +1056,22 @@ int sexp_tree::add_default_operator(int op_index, int argnum) {
 			sprintf(node_text, "%s(%s)", item.text.c_str(), Sexp_variables[sexp_var_index].text);
 			add_variable_data(node_text, type);
 		}
+		// special case for sexps that take containers (this covers multiple container OPF_ types)
 		else if (item.type & SEXPT_CONTAINER_NAME) {
 			Assertion(is_container_name_opf_type(op_type) || op_type == OPF_DATA_OR_STR_CONTAINER,
 				"Attempt to add default container name for a node of non-container type (%d). Please report!",
 				op_type);
 			add_container_name(item.text.c_str());
 		}
-			// modify-variable data type depends on type of variable being modified
-			// (we know this block is handling the second argument since it's not OPF_VARIABLE_NAME)
+		// modify-variable data type depends on type of variable being modified
+		// (we know this block is handling the second argument since it's not OPF_VARIABLE_NAME)
 		else if (Operators[op_index].value == OP_MODIFY_VARIABLE) {
 			// the the variable name
 			char buf2[256];
 			Assert(argnum == 1);
 			sexp_list_item temp_item;
 			get_default_value(&temp_item, buf2, op_index, 0);
-			int sexp_var_index = get_index_sexp_variable_name(temp_item.text);
+			sexp_var_index = get_index_sexp_variable_name(temp_item.text);
 			Assert(sexp_var_index != -1);
 
 			// from name get type
@@ -1084,7 +1086,7 @@ int sexp_tree::add_default_operator(int op_index, int argnum) {
 			}
 			add_data(item.text.c_str(), type);
 		}
-			// all other sexps and parameters
+		// all other sexps and parameters
 		else {
 			add_data(item.text.c_str(), item.type);
 		}
@@ -1352,10 +1354,15 @@ int sexp_tree::get_default_value(sexp_list_item* item, char* text_buf, int op, i
 	case OPF_SHIP_NOT_PLAYER:
 	case OPF_SHIP_POINT:
 	case OPF_SHIP_WING:
+	case OPF_SHIP_PROP:
 	case OPF_SHIP_WING_WHOLETEAM:
 	case OPF_SHIP_WING_SHIPONTEAM_POINT:
 	case OPF_SHIP_WING_POINT:
 		str = "<name of ship here>";
+		break;
+
+	case OPF_PROP:
+		str = "<name of prop here>";
 		break;
 
 	case OPF_ORDER_RECIPIENT:
@@ -1481,6 +1488,22 @@ int sexp_tree::get_default_value(sexp_list_item* item, char* text_buf, int op, i
 		str = Builtin_messages[0].name;
 		break;
 
+	case OPF_VARIABLE_NAME:
+		str = "<variable name>";
+		break;
+
+	case OPF_CONTAINER_NAME:
+		str = "<container name>";
+		break;
+
+	case OPF_LIST_CONTAINER_NAME:
+		str = "<list container name>";
+		break;
+
+	case OPF_MAP_CONTAINER_NAME:
+		str = "<map container name>";
+		break;
+
 	default:
 		str = "<new default required!>";
 		break;
@@ -1534,6 +1557,7 @@ int sexp_tree::query_default_argument_available(int op, int i) {
 	case OPF_WEAPON_NAME:
 	case OPF_INTEL_NAME:
 	case OPF_SHIP_CLASS_NAME:
+	case OPF_PROP_CLASS_NAME:
 	case OPF_HUGE_WEAPON:
 	case OPF_JUMP_NODE_NAME:
 	case OPF_AMBIGUOUS:
@@ -1609,6 +1633,27 @@ int sexp_tree::query_default_argument_available(int op, int i) {
 			ptr = GET_NEXT(ptr);
 		}
 
+		return 0;
+
+	case OPF_SHIP_PROP:
+		ptr = GET_FIRST(&obj_used_list);
+		while (ptr != END_OF_LIST(&obj_used_list)) {
+			if (ptr->type == OBJ_SHIP || ptr->type == OBJ_START || ptr->type == OBJ_PROP)
+				return 1;
+
+			ptr = GET_NEXT(ptr);
+		}
+
+		return 0;
+
+	case OPF_PROP:
+		ptr = GET_FIRST(&obj_used_list);
+		while (ptr != END_OF_LIST(&obj_used_list)) {
+			if (ptr->type == OBJ_PROP)
+				return 1;
+
+			ptr = GET_NEXT(ptr);
+		}
 		return 0;
 
 	case OPF_SHIP_NOT_PLAYER:
@@ -3341,6 +3386,10 @@ sexp_list_item* sexp_tree::get_listing_opf(int opf, int parent_node, int arg_ind
 		list = get_listing_opf_ship(parent_node);
 		break;
 
+	case OPF_PROP:
+		list = get_listing_opf_prop();
+		break;
+
 	case OPF_WING:
 		list = get_listing_opf_wing();
 		break;
@@ -3448,6 +3497,10 @@ sexp_list_item* sexp_tree::get_listing_opf(int opf, int parent_node, int arg_ind
 		list = get_listing_opf_ship_wing();
 		break;
 
+	case OPF_SHIP_PROP:
+		list = get_listing_opf_ship_prop();
+		break;
+
 	case OPF_SHIP_WING_WHOLETEAM:
 		list = get_listing_opf_ship_wing_wholeteam();
 		break;
@@ -3510,6 +3563,10 @@ sexp_list_item* sexp_tree::get_listing_opf(int opf, int parent_node, int arg_ind
 
 	case OPF_SHIP_CLASS_NAME:
 		list = get_listing_opf_ship_class_name();
+		break;
+
+	case OPF_PROP_CLASS_NAME:
+		list = get_listing_opf_prop_class_name();
 		break;
 
 	case OPF_HUGE_WEAPON:
@@ -4037,6 +4094,23 @@ sexp_list_item* sexp_tree::get_listing_opf_ship(int parent_node) {
 	return head.next;
 }
 
+sexp_list_item *sexp_tree::get_listing_opf_prop()
+{
+	object *ptr;
+	sexp_list_item head;
+
+	ptr = GET_FIRST(&obj_used_list);
+	while (ptr != END_OF_LIST(&obj_used_list)) {
+		if (ptr->type == OBJ_PROP) {
+			head.add_data(prop_id_lookup(ptr->instance)->prop_name);
+		}
+
+		ptr = GET_NEXT(ptr);
+	}
+
+	return head.next;
+}
+
 sexp_list_item* sexp_tree::get_listing_opf_wing() {
 	int i;
 	sexp_list_item head;
@@ -4347,12 +4421,12 @@ sexp_list_item* sexp_tree::get_listing_opf_subsystem_type(int parent_node) {
 }
 
 sexp_list_item* sexp_tree::get_listing_opf_point() {
-	char buf[NAME_LENGTH + 8];
+	char buf[NAME_LENGTH];
 	sexp_list_item head;
 
 	for (const auto &ii: Waypoint_lists) {
-		for (int j = 0; (uint) j < ii.get_waypoints().size(); ++j) {
-			sprintf(buf, "%s:%d", ii.get_name(), j + 1);
+		for (const auto &jj: ii.get_waypoints()) {
+			waypoint_stuff_name(buf, jj);
 			head.add_data(buf);
 		}
 	}
@@ -4414,8 +4488,8 @@ sexp_list_item* sexp_tree::get_listing_opf_ship_with_bay() {
 
 	for (objp = GET_FIRST(&obj_used_list); objp != END_OF_LIST(&obj_used_list); objp = GET_NEXT(objp)) {
 		if ((objp->type == OBJ_SHIP) || (objp->type == OBJ_START)) {
-			// determine if this ship has a docking bay
-			if (ship_has_dock_bay(objp->instance)) {
+			// determine if this ship has a hangar bay
+			if (ship_has_hangar_bay(objp->instance)) {
 				head.add_data(Ships[objp->instance].ship_name);
 			}
 		}
@@ -4466,7 +4540,7 @@ sexp_list_item* sexp_tree::get_listing_opf_arrival_anchor_all() {
 	for (restrict_to_players = 0; restrict_to_players < 2; restrict_to_players++) {
 		for (i = 0; i < (int)Iff_info.size(); i++) {
 			char tmp[NAME_LENGTH + 15];
-			stuff_special_arrival_anchor_name(tmp, i, restrict_to_players, 0);
+			stuff_special_arrival_anchor_name(tmp, i, restrict_to_players, false);
 
 			head.add_data(tmp);
 		}
@@ -4932,6 +5006,16 @@ sexp_list_item* sexp_tree::get_listing_opf_ship_wing() {
 	return head.next;
 }
 
+sexp_list_item* sexp_tree::get_listing_opf_ship_prop()
+{
+	sexp_list_item head;
+
+	head.add_list(get_listing_opf_ship());
+	head.add_list(get_listing_opf_prop());
+
+	return head.next;
+}
+
 sexp_list_item* sexp_tree::get_listing_opf_order_recipient() {
 	sexp_list_item head;
 
@@ -5102,6 +5186,17 @@ sexp_list_item* sexp_tree::get_listing_opf_ship_class_name() {
 	return head.next;
 }
 
+sexp_list_item* sexp_tree::get_listing_opf_prop_class_name()
+{
+	sexp_list_item head;
+
+	for (auto& pi : Prop_info) {
+		head.add_data(pi.name.c_str());
+	}
+
+	return head.next;
+}
+
 sexp_list_item* sexp_tree::get_listing_opf_huge_weapon() {
 	sexp_list_item head;
 
@@ -5187,7 +5282,15 @@ sexp_list_item* sexp_tree::get_listing_opf_variable_names() {
 
 	for (i = 0; i < MAX_SEXP_VARIABLES; i++) {
 		if (Sexp_variables[i].type & SEXP_VARIABLE_SET) {
-			head.add_data(Sexp_variables[i].variable_name);
+			int t = 0;
+			if (Sexp_variables[i].type & SEXP_VARIABLE_NUMBER) {
+				t = SEXPT_NUMBER;
+			} else if (Sexp_variables[i].type & SEXP_VARIABLE_STRING) {
+				t = SEXPT_STRING;
+			} else {
+				Assertion(false, "SEXP variable must be a string or a number!");
+			}
+			head.add_data(Sexp_variables[i].variable_name, (t | SEXPT_VALID | SEXPT_VARIABLE));
 		}
 	}
 

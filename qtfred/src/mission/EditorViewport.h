@@ -60,12 +60,24 @@ class EditorViewport {
 	fix lasttime = 0;
 
 	bool inc_mission_time();
-	void process_system_keys(int key);
-	void process_controls(vec3d* pos, matrix* orient, float frametime, int key, int mode = 0);
+	void process_system_keys();
+	void process_controls(vec3d* pos, matrix* orient, float frametime, int mode = 0);
 	void level_object(matrix* orient);
 
 	void initialSetup();
+
+	SCP_vector<SCP_string> _layerNames;
+	SCP_vector<bool> _layerVisibility;
+	std::unordered_map<int, size_t> _objectLayers;
+
+	size_t getLayerIndex(const SCP_string& name) const;
+	size_t getObjectLayerIndex(int objectIndex) const;
+	bool isLayerVisible(size_t layerIndex) const;
+	void syncMissionLayerNames() const;
+	void setObjectLayerByIndex(int objectIndex, size_t layerIndex);
  public:
+	static const char* DefaultLayerName;
+
 	enum {
 		DUP_DRAG_OF_WING = 2
 	};
@@ -88,6 +100,21 @@ class EditorViewport {
 
 	int select_object(int cx, int cy);
 
+	SCP_vector<SCP_string> getLayerNames() const;
+	bool addLayer(const SCP_string& name, SCP_string* errorMessage = nullptr);
+	bool deleteLayer(const SCP_string& name, SCP_string* errorMessage = nullptr);
+	bool setLayerVisibility(const SCP_string& name, bool visible, SCP_string* errorMessage = nullptr);
+	bool getLayerVisibility(const SCP_string& name, bool* visible, SCP_string* errorMessage = nullptr) const;
+	void showAllLayers();
+	int getHiddenLayerCount() const;
+	void reloadLayersFromMission();
+
+	SCP_string getObjectLayerName(int objectIndex) const;
+	bool moveObjectToLayer(int objectIndex, const SCP_string& layerName, SCP_string* errorMessage = nullptr);
+	void moveMarkedObjectsToLayer(const SCP_string& layerName, SCP_string* errorMessage = nullptr);
+
+	bool isObjectVisibleInLayer(const object* objp) const;
+
 
 	// viewpoint -> attach camera to current ship.
 	// cur_obj -> ship viewed.
@@ -97,13 +124,15 @@ class EditorViewport {
 	void drag_rotate_save_backup();
 
 	int create_object_on_grid(int x, int y, int waypoint_instance);
+	int create_object_on_grid(int x, int y, int waypoint_instance, bool create_prop);
 
-	int	create_object(vec3d *pos, int waypoint_instance = -1);
+	int	create_object(vec3d *pos, int waypoint_instance = -1, bool create_prop = false);
 
 	int duplicate_marked_objects();
 	int drag_objects(int x, int y);
 
 	int drag_rotate_objects(int mouse_dx, int mouse_dy);
+	void cancel_drag();
 
 	void view_universe(bool just_marked);
 
@@ -146,6 +175,7 @@ class EditorViewport {
 	int Dup_drag = 0;
 
 	int cur_model_index = 0;
+	int cur_prop_index = -1;
 
 	bool Bg_bitmap_dialog = false;
 
@@ -167,13 +197,21 @@ class EditorViewport {
 	bool Error_checker_checks_potential_issues = true;
 	bool Error_checker_checks_potential_issues_once = false;
 
+	bool Show_sexp_help_mission_events = true;
+	bool Show_sexp_help_mission_goals = true;
+	bool Show_sexp_help_mission_cutscenes = true;
+	bool Show_sexp_help_ship_editor = false;
+	bool Show_sexp_help_wing_editor = false;
+
+	void saveSettings() const;
+
 	Editor* editor = nullptr;
 	FredRenderer* renderer = nullptr;
 	IDialogProvider* dialogProvider = nullptr;
+
+private:
+	void loadSettings();
 };
 
 }
 }
-
-
-

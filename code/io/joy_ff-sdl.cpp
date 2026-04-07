@@ -53,6 +53,7 @@ static haptic_effect_t pSecShootEffect;
 static haptic_effect_t pSpring;
 static haptic_effect_t pDock;
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto ForceFeedbackOption = options::OptionBuilder<bool>("Input.ForceFeedback",
                      std::pair<const char*, int>{"Force Feedback", 1728},
                      std::pair<const char*, int>{"Enable or disable force feedback", 1729})
@@ -61,6 +62,7 @@ static auto ForceFeedbackOption = options::OptionBuilder<bool>("Input.ForceFeedb
                      .default_val(false)
                      .finish();
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto HitEffectOption = options::OptionBuilder<bool>("Input.HitEffect",
                      std::pair<const char*, int>{"Directional Hit", 1730},
                      std::pair<const char*, int>{"Enable or disable the directional hit effect", 1731})
@@ -69,6 +71,7 @@ static auto HitEffectOption = options::OptionBuilder<bool>("Input.HitEffect",
                      .default_val(false)
                      .finish();
 
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto ForceFeedbackStrength = options::OptionBuilder<float>("Input.FFStrength",
                      std::pair<const char*, int>{"Force Feedback Strength", 1756},
                      std::pair<const char*, int>{"The realtive strength of Force Feedback effects", 1757})

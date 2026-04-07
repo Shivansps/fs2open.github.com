@@ -1315,9 +1315,9 @@ int asteroid_check_collision(object *pasteroid, object *other_obj, vec3d *hitpos
 				model_get_moving_submodel_list(submodel_vector, heavy_obj);
 
 				// turn off all moving submodels, collide against only 1 at a time.
-				// turn off collision detection for all moving submodels
+				mc.collision_checked.assign(pm->n_models, 0);
 				for (auto submodel: submodel_vector) {
-					pmi->submodel[submodel].collision_checked = true;
+					mc.collision_checked[submodel] = true;
 				}
 
 				// Only check single submodel now, since children of moving submodels are handled as moving as well
@@ -1325,10 +1325,8 @@ int asteroid_check_collision(object *pasteroid, object *other_obj, vec3d *hitpos
 
 				// check each submodel in turn
 				for (auto submodel: submodel_vector) {
-					auto smi = &pmi->submodel[submodel];
-
 					// turn on just one submodel for collision test
-					smi->collision_checked = false;
+					mc.collision_checked[submodel] = false;
 
 					// find the start and end positions of the sphere in submodel RF
 					model_instance_global_to_local_point(&p0, &light_obj->last_pos, pm, pmi, submodel, &heavy_obj->last_orient, &heavy_obj->last_pos, true);
@@ -1360,8 +1358,11 @@ int asteroid_check_collision(object *pasteroid, object *other_obj, vec3d *hitpos
 						}
 					}
 					// Don't look at this submodel again
-					smi->collision_checked = true;
+					mc.collision_checked[submodel] = true;
 				}
+
+				// Clear collision_checked before base model pass so it auto-inits fresh
+				mc.collision_checked.clear();
 
 			}
 
@@ -1607,8 +1608,13 @@ static float asteroid_create_explosion(object *objp)
 	}
 
 	fireball_scale_multiplier = asteroid_get_fireball_scale_multiplier(objp->instance);
+	auto fireball_radius = objp->radius * fireball_scale_multiplier;
 
-	fireball_objnum = fireball_create( &objp->pos, fireball_type, FIREBALL_LARGE_EXPLOSION, OBJ_INDEX(objp), objp->radius*fireball_scale_multiplier, false, &objp->phys_info.vel );
+	if (Zero_radius_explosions_skip_fireballs && fl_near_zero(fireball_radius))
+		fireball_objnum = -1;
+	else
+		fireball_objnum = fireball_create( &objp->pos, fireball_type, FIREBALL_LARGE_EXPLOSION, OBJ_INDEX(objp), fireball_radius, false, &objp->phys_info.vel );
+
 	if ( fireball_objnum > -1 )	{
 		explosion_life = fireball_lifeleft(&Objects[fireball_objnum]);
 	} else {
@@ -2324,7 +2330,7 @@ static void asteroid_parse_section()
 	}
 
 	if (optional_string("$Detail distance:")) {
-		asteroid_p->num_detail_levels = (int)stuff_int_list(asteroid_p->detail_distance, MAX_ASTEROID_DETAIL_LEVELS, RAW_INTEGER_TYPE);
+		asteroid_p->num_detail_levels = sz2i(stuff_int_list(asteroid_p->detail_distance, MAX_ASTEROID_DETAIL_LEVELS, ParseLookupType::RAW_INTEGER_TYPE));
 	}
 
 	if (optional_string("$Max Speed:")) {
@@ -2488,8 +2494,8 @@ static void asteroid_parse_tbl(const char* filename)
 			Asteroid_impact_explosion_ani = particle::util::parseEffect();
 		}
 		else {
-			char impact_ani_file[MAX_FILENAME_LEN];
-			float Asteroid_impact_explosion_radius;
+			char impact_ani_file[MAX_FILENAME_LEN] = {0};
+			float Asteroid_impact_explosion_radius = 0.0f;
 			int num_frames;
 
 			if (optional_string("$Impact Explosion:")) {

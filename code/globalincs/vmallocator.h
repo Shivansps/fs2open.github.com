@@ -32,6 +32,16 @@ public:
 		return std::find(this->begin(), this->end(), item) != this->end();
 	}
 
+	void concat(SCP_vector<T>&& other)
+	{
+		insert(this->end(), std::make_move_iterator(other.begin()), std::make_move_iterator(other.end()));
+	}
+
+	void concat(const SCP_vector<T>& other)
+	{
+		insert(this->end(), other.begin(), other.end());
+	}
+
 	bool in_bounds(int idx) const
 	{
 		return (idx >= 0) && (static_cast<size_t>(idx) < this->size());
@@ -46,6 +56,16 @@ public:
 template <typename T>
 bool SCP_vector_contains(const SCP_vector<T>& vector, const T& item) {
 	return std::find(vector.begin(), vector.end(), item) != vector.end();
+}
+
+template <typename T>
+bool SCP_vector_contains_lcase(const SCP_vector<T>& vector, const T& item) {
+	return std::find_if(vector.begin(), vector.end(), [&item](const T& iterator_item) { return lcase_equal(iterator_item, item); }) != vector.end();
+}
+
+template <typename T>
+bool SCP_vector_contains_lcase(const SCP_vector<T>& vector, const char* item) {
+	return std::find_if(vector.begin(), vector.end(), [&item](const T& iterator_item) { return !stricmp(iterator_item.c_str(), item); }) != vector.end();
 }
 
 template <typename T>
@@ -97,11 +117,11 @@ extern bool lcase_equal(const SCP_string& _Left, const SCP_string& _Right);
 extern bool lcase_lessthan(const SCP_string& _Left, const SCP_string& _Right);
 
 
-template <typename T, typename U>
-using SCP_map = std::map<T, U, std::less<T>, std::allocator<std::pair<const T, U>>>;
+template <typename T, typename U, typename Less = std::less<T>>
+using SCP_map = std::map<T, U, Less, std::allocator<std::pair<const T, U>>>;
 
-template <typename T, typename U>
-using SCP_multimap = std::multimap<T, U, std::less<T>, std::allocator<std::pair<const T, U>>>;
+template <typename T, typename U, typename Less = std::less<T>>
+using SCP_multimap = std::multimap<T, U, Less, std::allocator<std::pair<const T, U>>>;
 
 template <typename T>
 using SCP_queue = std::queue<T, std::deque<T, std::allocator<T>>>;
@@ -109,11 +129,11 @@ using SCP_queue = std::queue<T, std::deque<T, std::allocator<T>>>;
 template <typename T>
 using SCP_deque = std::deque<T, std::allocator<T>>;
 
-template <typename T>
-class SCP_set : public std::set<T, std::less<T>, std::allocator<T>>
+template <typename T, typename Less = std::less<T>>
+class SCP_set : public std::set<T, Less, std::allocator<T>>
 {
 public:
-	using std::set<T, std::less<T>, std::allocator<T>>::set;	// inherit all constructors
+	using std::set<T, Less, std::allocator<T>>::set;	// inherit all constructors
 
 	bool contains(const T& item) const
 	{
@@ -121,11 +141,11 @@ public:
 	}
 };
 
-template <typename T>
-class SCP_multiset : public std::multiset<T, std::less<T>, std::allocator<T>>
+template <typename T, typename Less = std::less<T>>
+class SCP_multiset : public std::multiset<T, Less, std::allocator<T>>
 {
 public:
-	using std::multiset<T, std::less<T>, std::allocator<T>>::multiset;	// inherit all constructors
+	using std::multiset<T, Less, std::allocator<T>>::multiset;	// inherit all constructors
 
 	bool contains(const T& item) const
 	{

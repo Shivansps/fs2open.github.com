@@ -115,6 +115,7 @@ static bool playbackdevice_change(int /*device*/, bool initial)
 
 	return false;
 }
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto PlaybackDeviceOption = options::OptionBuilder<int>("Audio.PlaybackDevice",
                      std::pair<const char*, int>{"Playback Device", 1834},
                      std::pair<const char*, int>{"The device used for audio playback", 1835})
@@ -190,6 +191,7 @@ static bool capturedevice_change(int /*device*/, bool initial)
 
 	return false;
 }
+// coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto CaptureDeviceOption = options::OptionBuilder<int>("Audio.CaptureDevice",
                      std::pair<const char*, int>{"Capture Device", 1836},
                      std::pair<const char*, int>{"The device used for audio capture", 1837})

@@ -11,8 +11,45 @@
 #include "ship/shiphit.h"
 #include "weapon/weapon.h"
 #include "mission/missionload.h"
+#include "prop/prop.h"
+#include "controlconfig/controlsconfig.h"
 
 using namespace ImGui;
+
+namespace {
+SCP_string get_binding_text(int action_id)
+{
+	const auto& action = Control_config[action_id];
+
+	if (!action.first.empty() && !action.second.empty()) {
+		return action.first.textify() + " or " + action.second.textify();
+	}
+
+	if (!action.first.empty()) {
+		return action.first.textify();
+	}
+
+	if (!action.second.empty()) {
+		return action.second.textify();
+	}
+
+	return "Unbound";
+}
+
+void controls_reference_entry(const char* label, const SCP_string& description)
+{
+	Bullet();
+	SameLine();
+	TextWrapped("%s: %s", label, description.c_str());
+}
+
+void controls_reference_entry(const char* label, const char* description)
+{
+	Bullet();
+	SameLine();
+	TextWrapped("%s: %s", label, description);
+}
+} // namespace
 
 std::map<animation::ModelAnimationTriggerType, std::map<SCP_string, bool>> manual_animation_triggers = {};
 std::map<animation::ModelAnimationTriggerType, bool> manual_animations = {};
@@ -87,6 +124,32 @@ void LabUi::build_weapon_subtype_list() const
 					}
 				}
 				weapon_idx++;
+			}
+		}
+	}
+}
+
+void LabUi::build_prop_subtype_list()
+{
+	for (auto& propc : Prop_categories) {
+		with_TreeNode(propc.name.c_str())
+		{
+			int prop_idx = 0;
+
+			for (auto const& class_def : Prop_info) {
+				if (lcase_equal(prop_get_category(class_def.category_index)->name, propc.name)) {
+					SCP_string node_label;
+					sprintf(node_label, "##PropClassIndex%i", prop_idx);
+					TreeNodeEx(node_label.c_str(),
+						ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen,
+						"%s",
+						class_def.name.c_str());
+
+					if (IsItemClicked() && !IsItemToggledOpen()) {
+						getLabManager()->changeDisplayedObject(LabMode::Prop, prop_idx);
+					}
+				}
+				prop_idx++;
 			}
 		}
 	}
@@ -171,7 +234,15 @@ void LabUi::build_object_list()
 	}
 }
 
-void LabUi::build_background_list() const
+void LabUi::build_prop_list()
+{
+	with_TreeNode("Prop Classes")
+	{
+		build_prop_subtype_list();
+	}
+}
+
+void LabUi::build_background_list()
 {
 	SCP_vector<SCP_string> t_missions;
 
@@ -234,6 +305,8 @@ void LabUi::build_options_menu()
 		MenuItem("Object selector", nullptr, &show_object_selection_dialog);
 		MenuItem("Background selector", nullptr, &show_background_selection_dialog);
 		MenuItem("Object options", nullptr, &show_object_options_dialog);
+		MenuItem("Controls reference", nullptr, &show_controls_reference_dialog);
+		MenuItem("Reset View", nullptr, &reset_view);
 		MenuItem("Close lab", "ESC", &close_lab);
 	}
 }
@@ -243,6 +316,11 @@ void LabUi::build_toolbar_entries()
 	with_MainMenuBar
 	{
 		build_options_menu();
+	}
+
+	if (reset_view) {
+		getLabManager()->Renderer->resetView();
+		reset_view = false;
 	}
 
 	if (close_lab) {
@@ -272,6 +350,8 @@ void LabUi::show_object_selector() const
 
 			build_weapon_list();
 
+			build_prop_list();
+
 			build_object_list();
 		}
 	}
@@ -293,7 +373,43 @@ void LabUi::create_ui()
 	if (show_object_selection_dialog)
 		show_object_selector();
 
+	if (show_controls_reference_dialog)
+		show_controls_reference();
+
 	rebuild_after_object_change = false;
+}
+
+void LabUi::show_controls_reference()
+{
+	with_Window("Lab controls reference")
+	{
+		TextWrapped("Mouse controls");
+		controls_reference_entry("LMB + drag", "Orient the displayed object.");
+		controls_reference_entry("RMB + drag", "Rotate the camera.");
+		controls_reference_entry("Shift + RMB + drag", "Pan the camera on the X/Y plane.");
+		controls_reference_entry("Mouse wheel", "Zoom the camera in or out.");
+		TextWrapped("Rotation axis limits and rotation speed apply only to object orientation (LMB), not "
+					"camera controls (RMB).");
+
+		Separator();
+		TextWrapped("Keyboard shortcuts");
+		controls_reference_entry("R", "Cycle object orientation (LMB) axis mode (Yaw, Pitch, Roll, or Both).");
+		controls_reference_entry("S", "Cycle object orientation (LMB) speed.");
+		controls_reference_entry("V", "Reset camera view.");
+		controls_reference_entry("T / Y", "Cycle team color presets.");
+		controls_reference_entry("1-9", "Switch anti-aliasing presets.");
+		controls_reference_entry("M", "Export an environment map.");
+		controls_reference_entry("ESC", "Close the lab.");
+
+		if (getLabManager()->CurrentMode == LabMode::Ship) {
+			Separator();
+			TextWrapped("Ship-only controls (from current control bindings)");
+			// These don't work in the new lab yet
+			//controls_reference_entry("Increase throttle by 5%", get_binding_text(PLUS_5_PERCENT_THROTTLE));
+			//controls_reference_entry("Decrease throttle by 5%", get_binding_text(MINUS_5_PERCENT_THROTTLE));
+			controls_reference_entry("Afterburner", get_binding_text(AFTERBURNER));
+		}
+	}
 }
 
 const char* antialiasing_settings[] = {
@@ -418,7 +534,8 @@ void LabUi::show_render_options()
 				Checkbox("Rotate/Translate Subsystems", &animate_subsystems);
 			}
 			Checkbox("Show full detail", &show_full_detail);
-			if (getLabManager()->CurrentMode != LabMode::Asteroid) {
+			if (getLabManager()->CurrentMode == LabMode::Ship ||
+				getLabManager()->CurrentMode == LabMode::Weapon) {
 				Checkbox("Show thrusters", &show_thrusters);
 				if (getLabManager()->CurrentMode == LabMode::Ship) {
 					Checkbox("Show afterburners", &show_afterburners);
@@ -452,6 +569,7 @@ void LabUi::show_render_options()
 			Checkbox("Hide Post Processing", &hide_post_processing);
 			Checkbox("Hide particles", &no_particles);
 			Checkbox("Render as wireframe", &use_wireframe_rendering);
+			Checkbox("Orthographic projection", &use_orthographic_projection);
 			Checkbox("Render without light", &no_lighting);
 			Checkbox("Render with emissive lighting", &show_emissive_lighting);
 			SliderFloat("Light brightness", &light_factor, 0.0f, 10.0f);
@@ -478,6 +596,10 @@ void LabUi::show_render_options()
 					for (const auto &s : profile_list) {
 						if (Button(s.c_str(), ImVec2(-FLT_MIN, GetTextLineHeight() * 2))) {
 							ltp::switch_to(s);
+
+							// Avoid immediately overwriting the selected profile's values with
+							// stale slider state captured before the profile switch.
+							skip_setting_light_options_this_frame = true;
 						}
 					}
 				}
@@ -562,11 +684,12 @@ void LabUi::show_render_options()
 		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::NoLighting, no_lighting);
 		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::ShowFullDetail, show_full_detail);
 		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::ShowThrusters, show_thrusters);
-		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::ShowAfterburners, show_afterburners);
+		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::ShowAfterburners, show_afterburners || getLabManager()->Lab_thrust_afterburn);
 		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::ShowWeapons, show_weapons);
 		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::ShowEmissiveLighting, show_emissive_lighting);
 		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::MoveSubsystems, animate_subsystems);
 		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::NoParticles, no_particles);
+		getLabManager()->Renderer->setRenderFlag(LabRenderFlag::UseOrthographicProjection, use_orthographic_projection);
 		getLabManager()->Renderer->setEmissiveFactor(emissive_factor);
 		getLabManager()->Renderer->setAmbientFactor(ambient_factor);
 		getLabManager()->Renderer->setLightFactor(light_factor);
@@ -612,11 +735,13 @@ static void build_ship_table_info_txtbox(ship_info* sip)
 		static SCP_string table_text;
 		static int old_class = getLabManager()->CurrentClass;
 
-		if (table_text.length() == 0 || old_class != getLabManager()->CurrentClass)
+		if (table_text.length() == 0 || old_class != getLabManager()->CurrentClass) {
 			table_text = get_ship_table_text(sip);
+			old_class = getLabManager()->CurrentClass;
+		}
 
 		InputTextMultiline("##table_text",
-			const_cast<char*>(table_text.c_str()),
+			table_text.data(),
 			table_text.length(),
 			ImVec2(-FLT_MIN, GetTextLineHeight() * 16),
 			ImGuiInputTextFlags_ReadOnly);
@@ -633,10 +758,11 @@ static void build_weapon_table_info_txtbox(weapon_info* wip)
 
 		if (table_text.length() == 0 || old_class != getLabManager()->CurrentClass) {
 			table_text = get_weapon_table_text(wip);
+			old_class = getLabManager()->CurrentClass;
 		}
 
 		InputTextMultiline("##weapon_table_text",
-			const_cast<char*>(table_text.c_str()),
+			table_text.data(),
 			table_text.length(),
 			ImVec2(-FLT_MIN, GetTextLineHeight() * 16),
 			ImGuiInputTextFlags_ReadOnly);
@@ -1064,6 +1190,9 @@ void LabUi::maybe_show_animation_category(const SCP_vector<animation::ModelAnima
 					case animation::ModelAnimationTriggerType::Docked:
 						button_label += "Trigger Docked Animation " + std::to_string(count++);
 						break;
+					case animation::ModelAnimationTriggerType::Scripted:
+						button_label += "Trigger Scripted Animation " + std::to_string(count++);
+						break;
 					default:
 						// We really shouldn't be here, but just in case
 						Assertion(false, "Unexpected animation trigger type %d", static_cast<int>(trigger_type));
@@ -1426,7 +1555,7 @@ void LabUi::show_object_options() const
 			{
 				build_weapon_options(shipp);
 			}
-		} else if (getLabManager()->CurrentMode == LabMode::Weapon && getLabManager()->isSafeForWeapons()) {
+		} else if (getLabManager()->CurrentMode == LabMode::Weapon && getLabManager()->CurrentClass >= 0) {
 			auto wip = &Weapon_info[getLabManager()->CurrentClass];
 
 			with_CollapsingHeader("Weapon Info")
@@ -1458,7 +1587,7 @@ void LabUi::show_object_options() const
 				}
 
 				InputTextMultiline("##asteroid_table_text",
-					const_cast<char*>(table_text.c_str()),
+					table_text.data(),
 					table_text.length(),
 					ImVec2(-FLT_MIN, GetTextLineHeight() * 16),
 					ImGuiInputTextFlags_ReadOnly);
@@ -1480,6 +1609,32 @@ void LabUi::show_object_options() const
 							}
 						}
 					}
+				}
+			}
+		} else if (getLabManager()->CurrentMode == LabMode::Prop && getLabManager()->CurrentClass >= 0) {
+			const auto& info = Prop_info[getLabManager()->CurrentClass];
+
+			with_CollapsingHeader("Object Info")
+			{
+				static SCP_string table_text;
+				static int old_class = -1;
+
+				if (table_text.empty() || old_class != getLabManager()->CurrentClass) {
+					table_text = get_prop_table_text(&info);
+					old_class = getLabManager()->CurrentClass;
+				}
+
+				InputTextMultiline("##prop_table_text",
+					table_text.data(),
+					table_text.length(),
+					ImVec2(-FLT_MIN, GetTextLineHeight() * 16),
+					ImGuiInputTextFlags_ReadOnly);
+			}
+
+			with_CollapsingHeader("Object actions")
+			{
+				if (getLabManager()->isSafeForProps()) {
+					// No actions yet
 				}
 			}
 		}

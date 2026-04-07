@@ -186,112 +186,24 @@ public:
 
 SCP_unordered_map<int, intrinsic_motion> Intrinsic_motions;
 
-
 void model_free(polymodel* pm)
 {
-	int i, j;
-	safe_kill(pm->ship_bay);
-
-	if (pm->paths) {
-		for (i = 0; i < pm->n_paths; i++) {
-			for (j = 0; j < pm->paths[i].nverts; j++) {
-				if (pm->paths[i].verts[j].turret_ids) {
-					vm_free(pm->paths[i].verts[j].turret_ids);
-				}
-			}
-			if (pm->paths[i].verts) {
-				vm_free(pm->paths[i].verts);
-			}
-		}
-		vm_free(pm->paths);
-	}
-
-	if (pm->shield.verts) {
-		vm_free(pm->shield.verts);
-	}
-
-	if (pm->shield.tris) {
-		vm_free(pm->shield.tris);
-	}
-
-	if (pm->gun_banks) {	// NOLINT
-		delete[] pm->gun_banks;
-	}
-
-	if (pm->missile_banks) {	// NOLINT
-		delete[] pm->missile_banks;
-	}
-
-	if (pm->docking_bays) {
-		for (i = 0; i < pm->n_docks; i++) {
-			if (pm->docking_bays[i].splines) {
-				vm_free(pm->docking_bays[i].splines);
-			}
-		}
-		vm_free(pm->docking_bays);
-	}
-
-
-	if (pm->thrusters) {
-		for (i = 0; i < pm->n_thrusters; i++) {
-			if (pm->thrusters[i].points)
-				vm_free(pm->thrusters[i].points);
-		}
-
-		vm_free(pm->thrusters);
-	}
-
-	if (pm->glow_point_banks) { // free the glows!!! -Bobboau
-		for (i = 0; i < pm->n_glow_point_banks; i++) {
-			if (pm->glow_point_banks[i].points)
-				vm_free(pm->glow_point_banks[i].points);
-		}
-
-		vm_free(pm->glow_point_banks);
-	}
-
-#ifndef NDEBUG
-	if (pm->debug_info) {
-		vm_free(pm->debug_info);
-	}
-#endif
+	int i;
 
 	if (pm->submodel) {
 		for (i = 0; i < pm->n_models; i++) {
 			pm->submodel[i].buffer.clear();
 
-			if (pm->submodel[i].bsp_data) {
-				vm_free(pm->submodel[i].bsp_data);
-			}
-
 			if (pm->submodel[i].collision_tree_index >= 0) {
 				model_remove_bsp_collision_tree(pm->submodel[i].collision_tree_index);
-			}
-
-			if (pm->submodel[i].outline_buffer != nullptr) {
-				vm_free(pm->submodel[i].outline_buffer);
-				pm->submodel[i].outline_buffer = nullptr;
+				pm->submodel[i].collision_tree_index = 0;
 			}
 		}
-
-		delete[] pm->submodel;
 	}
 
-	if (pm->xc) {
-		vm_free(pm->xc);
-	}
-
-	if (pm->lights) {
-		vm_free(pm->lights);
-	}
-
-	if (pm->shield_collision_tree) {
-		vm_free(pm->shield_collision_tree);
-	}
-
-	if (pm->shield.buffer_id.isValid()) {
-		gr_delete_buffer(pm->shield.buffer_id);
-		pm->shield.buffer_id = gr_buffer_handle::invalid();
+	if (pm->shield.buffer_id->isValid()) {
+		gr_delete_buffer(*pm->shield.buffer_id);
+		*pm->shield.buffer_id = gr_buffer_handle::invalid();
 		pm->shield.buffer_n_verts = 0;
 	}
 
@@ -303,10 +215,7 @@ void model_free(polymodel* pm)
 		pm->vert_source.Base_vertex_offset = 0;
 	}
 
-	if (pm->vert_source.Vertex_list != NULL) {
-		vm_free(pm->vert_source.Vertex_list);
-		pm->vert_source.Vertex_list = NULL;
-	}
+	pm->vert_source.Vertex_list.reset();
 
 	if (pm->vert_source.Ibuffer_handle.isValid()) {
 		gr_heap_deallocate(GpuHeap::ModelIndex, pm->vert_source.Index_offset);
@@ -315,10 +224,7 @@ void model_free(polymodel* pm)
 		pm->vert_source.Index_offset = 0;
 	}
 
-	if (pm->vert_source.Index_list != NULL) {
-		vm_free(pm->vert_source.Index_list);
-		pm->vert_source.Index_list = NULL;
-	}
+	pm->vert_source.Index_list.reset();
 
 	pm->vert_source.Vertex_list_size = 0;
 	pm->vert_source.Index_list_size = 0;
@@ -1652,13 +1558,11 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 	}
 
 	pm->version = version;
-	Assert(strlen(filename) < FILESPEC_LENGTH );
-	strcpy_s(pm->filename, filename);
 
 	memset( &pm->view_positions, 0, sizeof(pm->view_positions) );
 
-	// reset insignia
-	pm->ins.clear();
+	// reset insignia counts
+	pm->num_ins = 0;
 
 	// reset glow points!! - Goober5000
 	pm->n_glow_point_banks = 0;
@@ -1708,7 +1612,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					Warning(LOCATION, "Model <%s> has a radius <= 0.00001f\n", filename);
 				}
 
-				pm->submodel = new bsp_info[MAX(1,pm->n_models)];
+				pm->submodel = make_shared<bsp_info[]>(MAX(1,pm->n_models));
 
 				//Assert(pm->n_models <= MAX_SUBMODELS);
 
@@ -1801,11 +1705,11 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 				}
 
 				// read in cross section info
-				pm->xc = NULL;
+				pm->xc = nullptr;
 				if ( pm->version >= 2014 ) {
 					pm->num_xc = cfread_int(fp);
 					if (pm->num_xc > 0) {
-						pm->xc = (cross_section*) vm_malloc(pm->num_xc*sizeof(cross_section));
+						pm->xc = make_shared<cross_section[]>(pm->num_xc);
 						for (i=0; i<pm->num_xc; i++) {
 							pm->xc[i].z = cfread_float(fp);
 							pm->xc[i].radius = cfread_float(fp);
@@ -1820,7 +1724,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					//mprintf(( "Found %d lights!\n", pm->num_lights ));
 
 					if (pm->num_lights > 0) {
-						pm->lights = (bsp_light *)vm_malloc( sizeof(bsp_light)*pm->num_lights );
+						pm->lights = make_shared<bsp_light[]>(pm->num_lights );
 						for (i=0; i<pm->num_lights; i++ )	{			
 							cfread_vector(&pm->lights[i].pos,fp);
 							pm->lights[i].type = cfread_int(fp);
@@ -2086,18 +1990,18 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 						}
 					}
 
-					// make a matrix if we have at least the fvec
-					if (has_fvec)
+					// make a matrix if we have at least the fvec or uvec
+					if (has_fvec || has_uvec)
 					{
-						vm_vector_2_matrix(&sm->frame_of_reference, &fvec, has_uvec ? &uvec : nullptr, has_rvec ? &rvec : nullptr);
+						vm_vector_2_matrix_uvec(&sm->frame_of_reference, has_fvec ? &fvec : nullptr, has_uvec ? &uvec : nullptr, has_rvec ? &rvec : nullptr);
 
 						// if the look_at_offset is still the default value (hasn't been set by submodel properties), assume that
 						// by specifying the submodel orientation matrix we are also specifying the "looking" direction
 						if (sm->look_at_offset == -1.0f)
 							sm->look_at_offset = 0.0f;
 					}
-					else if (has_uvec || has_rvec)
-						Warning(LOCATION, "Improper custom orientation matrix for subsystem %s; you must define an $fvec", sm->name);
+					else if (has_rvec)
+						Warning(LOCATION, "Improper custom orientation matrix for subsystem %s; you must define an $fvec or $uvec", sm->name);
 				}
 
 				{
@@ -2112,9 +2016,9 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 				{
 					sm->bsp_data_size = cfread_int(fp);
 					if (sm->bsp_data_size > 0) {
-						sm->bsp_data = reinterpret_cast<ubyte*>(vm_malloc(sm->bsp_data_size));
-						cfread(sm->bsp_data, 1, sm->bsp_data_size, fp);
-						swap_bsp_data(pm, sm->bsp_data);
+						sm->bsp_data = make_shared<ubyte[]>(sm->bsp_data_size);
+						cfread(sm->bsp_data.get(), 1, sm->bsp_data_size, fp);
+						swap_bsp_data(pm, sm->bsp_data.get());
 					}
 					else {
 						sm->bsp_data = nullptr;
@@ -2125,28 +2029,27 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					sm->bsp_data_size = cfread_int(fp);
 
 					if (sm->bsp_data_size > 0) {
-						auto bsp_data = reinterpret_cast<ubyte*>(vm_malloc(sm->bsp_data_size));
+						auto bsp_data = make_shared<ubyte[]>(sm->bsp_data_size);
 
-						cfread(bsp_data, 1, sm->bsp_data_size, fp);
+						cfread(bsp_data.get(), 1, sm->bsp_data_size, fp);
 
 						// byte swap first thing
-						swap_bsp_data(pm, bsp_data);
+						swap_bsp_data(pm, bsp_data.get());
 
 						extern bool Cmdline_no_bsp_align;
 						if (Cmdline_no_bsp_align) {
 							sm->bsp_data = bsp_data;
 						}
 						else {
-							auto bsp_data_size_aligned = align_bsp_data(bsp_data, nullptr, sm->bsp_data_size);
+							auto bsp_data_size_aligned = align_bsp_data(bsp_data.get(), nullptr, sm->bsp_data_size);
 
 							if (bsp_data_size_aligned != static_cast<uint>(sm->bsp_data_size)) {
-								auto bsp_data_aligned = reinterpret_cast<ubyte*>(vm_malloc(bsp_data_size_aligned));
+								auto bsp_data_aligned = make_shared<ubyte[]>(bsp_data_size_aligned);
 
-								align_bsp_data(bsp_data, bsp_data_aligned, sm->bsp_data_size);
+								align_bsp_data(bsp_data.get(), bsp_data_aligned.get(), sm->bsp_data_size);
 
 								// release unaligned data
-								vm_free(bsp_data);
-								bsp_data = nullptr;
+								bsp_data.reset();
 
 								nprintf(("Model", "BSP ALIGN => %s:%s resized by %d bytes (%d total)\n", pm->filename, sm->name, bsp_data_size_aligned - sm->bsp_data_size, bsp_data_size_aligned));
 
@@ -2190,9 +2093,9 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					//mprintf(("SLDC Shield Collision Tree was %d bytes in size\n", pm->sldc_size));
 					pm->sldc_size = convert_sldc_to_slc2(sldc_tree.get(), slc2_tree.get(), pm->sldc_size);
 					//mprintf(("SLC2 Shield Collision Tree is %d bytes in size\n", pm->sldc_size));
-					pm->shield_collision_tree = (ubyte*)vm_malloc(pm->sldc_size); //sldc_size is slc2 size, reused variable
-					memcpy(pm->shield_collision_tree, slc2_tree.get(), pm->sldc_size);
-					swap_sldc_data(pm->shield_collision_tree);
+					pm->shield_collision_tree = make_shared<ubyte[]>(pm->sldc_size); //sldc_size is slc2 size, reused variable
+					memcpy(pm->shield_collision_tree.get(), slc2_tree.get(), pm->sldc_size);
+					swap_sldc_data(pm->shield_collision_tree.get());
 				}
 			}
 			break;
@@ -2201,9 +2104,9 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 			{
 				if (pm->version >= 2200) {
 					pm->sldc_size = cfread_int(fp);
-					pm->shield_collision_tree = (ubyte*)vm_malloc(pm->sldc_size);
-					cfread(pm->shield_collision_tree, 1, pm->sldc_size, fp);
-					swap_sldc_data(pm->shield_collision_tree);
+					pm->shield_collision_tree = make_shared<ubyte[]>(pm->sldc_size);
+					cfread(pm->shield_collision_tree.get(), 1, pm->sldc_size, fp);
+					swap_sldc_data(pm->shield_collision_tree.get());
 					//mprintf(( "SLC2 Shield Collision Tree, %d bytes in size\n", pm->sldc_size));
 				}
 			}
@@ -2214,7 +2117,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					pm->shield.nverts = cfread_int( fp );		// get the number of vertices in the list
 
 					if (pm->shield.nverts > 0) {
-						pm->shield.verts = (shield_vertex *)vm_malloc(pm->shield.nverts * sizeof(shield_vertex) );
+						pm->shield.verts = make_shared<shield_vertex[]>(pm->shield.nverts);
 						Assert( pm->shield.verts );
 						for ( i = 0; i < pm->shield.nverts; i++ ) {						// read in the vertex list
 							cfread_vector( &(pm->shield.verts[i].pos), fp );
@@ -2224,7 +2127,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					pm->shield.ntris = cfread_int( fp );		// get the number of triangles that compose the shield
 
 					if (pm->shield.ntris > 0) {
-						pm->shield.tris = (shield_tri *)vm_malloc(pm->shield.ntris * sizeof(shield_tri) );
+						pm->shield.tris = make_shared<shield_tri[]>(pm->shield.ntris);
 						Assert( pm->shield.tris );
 						for ( i = 0; i < pm->shield.ntris; i++ ) {
 							cfread_vector( &temp_vec, fp );
@@ -2257,11 +2160,11 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 			case ID_MPNT:
 			{
 				int n_weps = cfread_int(fp);
-				w_bank *wep_banks = nullptr;
+				std::shared_ptr<w_bank[]> wep_banks = nullptr;
 
 				if (n_weps > 0)
 				{
-					wep_banks = new w_bank[n_weps];
+					wep_banks = make_shared<w_bank[]>(n_weps);
 					for (i = 0; i < n_weps; ++i)
 					{
 						w_bank *bank = &wep_banks[i];
@@ -2310,8 +2213,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 				pm->n_docks = cfread_int(fp);
 
 				if (pm->n_docks > 0) {
-					pm->docking_bays = (dock_bay *)vm_malloc(sizeof(dock_bay) * pm->n_docks);
-					Assert( pm->docking_bays != NULL );
+					pm->docking_bays = make_shared<dock_bay[]>(pm->n_docks);
 
 					for (i = 0; i < pm->n_docks; i++ ) {
 						char *p;
@@ -2340,7 +2242,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 
 						bay->num_spline_paths = cfread_int( fp );
 						if ( bay->num_spline_paths > 0 ) {
-							bay->splines = (int *)vm_malloc(sizeof(int) * bay->num_spline_paths);
+							bay->splines = make_shared<int[]>(bay->num_spline_paths);
 							for ( j = 0; j < bay->num_spline_paths; j++ )
 								bay->splines[j] = cfread_int(fp);
 						} else {
@@ -2417,13 +2319,10 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 				int gpb_num = cfread_int(fp);
 
 				pm->n_glow_point_banks = gpb_num;
-				pm->glow_point_banks = NULL;
+				pm->glow_point_banks = nullptr;
 
 				if (gpb_num > 0)
-				{
-					pm->glow_point_banks = (glow_point_bank *) vm_malloc(sizeof(glow_point_bank) * gpb_num);
-					Assert(pm->glow_point_banks != NULL);
-				}
+					pm->glow_point_banks = make_shared<glow_point_bank[]>(gpb_num);
 
 				for (int gpb = 0; gpb < gpb_num; gpb++)
 				{
@@ -2438,12 +2337,12 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					bank->LOD = cfread_int(fp);
 					bank->type = cfread_int(fp);
 					bank->num_points = cfread_int(fp);
-					bank->points = NULL;
+					bank->points = nullptr;
 					bank->glow_bitmap = -1;
 					bank->glow_neb_bitmap = -1;
 
 					if (bank->num_points > 0)
-						bank->points = (glow_point *) vm_malloc(sizeof(glow_point) * bank->num_points);
+						bank->points = make_shared<glow_point[]>(bank->num_points);
 
 					//if((bank->off_time > 0) && (bank->disp_time > 0))
 						//bank->is_on = false;
@@ -2517,17 +2416,16 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 				pm->n_thrusters = cfread_int(fp);
 
 				if (pm->n_thrusters > 0) {
-					pm->thrusters = (thruster_bank *)vm_malloc(sizeof(thruster_bank) * pm->n_thrusters);
-					Assert( pm->thrusters != NULL );
+					pm->thrusters = make_shared<thruster_bank[]>(pm->n_thrusters);
 
 					for (i = 0; i < pm->n_thrusters; i++ ) {
 						thruster_bank *bank = &pm->thrusters[i];
 
 						bank->num_points = cfread_int(fp);
-						bank->points = NULL;
+						bank->points = nullptr;
 
 						if (bank->num_points > 0)
-							bank->points = (glow_point *) vm_malloc(sizeof(glow_point) * bank->num_points);
+							bank->points = make_shared<glow_point[]>(bank->num_points);
 
 						bank->obj_num = -1;
 						bank->submodel_num = -1;
@@ -2703,10 +2601,8 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 
 				#ifndef NDEBUG
 					pm->debug_info_size = len;
-					pm->debug_info = (char *)vm_malloc(pm->debug_info_size+1);
-					Assert(pm->debug_info!=NULL);
-					memset(pm->debug_info,0,len+1);
-					cfread( pm->debug_info, 1, len, fp );
+					pm->debug_info = make_shared<char[]>(pm->debug_info_size+1);
+					cfread( pm->debug_info.get(), 1, len, fp );
 				#endif
 				break;
 
@@ -2720,10 +2616,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					break;
 				}
 
-				pm->paths = (model_path *)vm_malloc(sizeof(model_path)*pm->n_paths);
-				Assert( pm->paths != NULL );
-
-				memset( pm->paths, 0, sizeof(model_path) * pm->n_paths );
+				pm->paths = make_shared<model_path[]>(pm->n_paths);
 					
 				for (i=0; i<pm->n_paths; i++ )	{
 					cfread_string_len(pm->paths[i].name, MAX_NAME_LEN, fp);
@@ -2757,12 +2650,10 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 					}
 
 					pm->paths[i].nverts = cfread_int( fp );
-					pm->paths[i].verts = (mp_vert *)vm_malloc( sizeof(mp_vert) * pm->paths[i].nverts );
+					pm->paths[i].verts = make_shared<mp_vert[]>(pm->paths[i].nverts);
 					pm->paths[i].goal = pm->paths[i].nverts - 1;
 					pm->paths[i].type = MP_TYPE_UNUSED;
 					pm->paths[i].value = 0;
-					Assert(pm->paths[i].verts!=NULL);
-					memset( pm->paths[i].verts, 0, sizeof(mp_vert) * pm->paths[i].nverts );
 
 					for (j=0; j<pm->paths[i].nverts; j++ )	{
 						cfread_vector(&pm->paths[i].verts[j].pos,fp );
@@ -2775,7 +2666,7 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 							pm->paths[i].verts[j].nturrets = nturrets;
 
 							if (nturrets > 0) {
-								pm->paths[i].verts[j].turret_ids = (int *)vm_malloc( sizeof(int) * nturrets );
+								pm->paths[i].verts[j].turret_ids = make_shared<int[]>(nturrets);
 								for ( k = 0; k < nturrets; k++ )
 									pm->paths[i].verts[j].turret_ids[k] = cfread_int( fp );
 							}
@@ -2806,80 +2697,61 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 				}
 				break;			
 
-			case ID_INSG: {
+			case ID_INSG:
+				int num_ins, num_verts, num_faces, idx, idx2, idx3;
+
 				// get the # of insignias
-				int num_ins = cfread_int(fp);
-				pm->ins = SCP_vector<insignia>(num_ins);
+				num_ins = cfread_int(fp);
+				pm->num_ins = num_ins;
 
 				// read in the insignias
-				for (int idx = 0; idx < num_ins; idx++){
-					insignia& ins = pm->ins[idx];
-
+				for(idx=0; idx<num_ins; idx++){
 					// get the detail level
-					ins.detail_level = cfread_int(fp);
-					if (ins.detail_level < 0) {
-						Warning(LOCATION, "Model '%s': insignia uses an invalid LOD (%i)\n", pm->filename, ins.detail_level);
+					pm->ins[idx].detail_level = cfread_int(fp);
+					if (pm->ins[idx].detail_level < 0) {
+						Warning(LOCATION, "Model '%s': insignia uses an invalid LOD (%i)\n", pm->filename, pm->ins[idx].detail_level);
 					}
 
 					// # of faces
-					int num_faces = cfread_int(fp);
+					num_faces = cfread_int(fp);
+					pm->ins[idx].num_faces = num_faces;
+					Assert(num_faces <= MAX_INS_FACES);
 
 					// # of vertices
-					int num_verts = cfread_int(fp);
-					SCP_vector<vec3d> vertices(num_verts);
+					num_verts = cfread_int(fp);
+					Assert(num_verts <= MAX_INS_VECS);
 
 					// read in all the vertices
-					for(int idx2 = 0; idx2 < num_verts; idx2++){
-						cfread_vector(&vertices[idx2], fp);
+					for(idx2=0; idx2<num_verts; idx2++){
+						cfread_vector(&pm->ins[idx].vecs[idx2], fp);
 					}
 
-					vec3d offset;
 					// read in world offset
-					cfread_vector(&offset, fp);
-
-					vec3d min {{{FLT_MAX, FLT_MAX, FLT_MAX}}};
-					vec3d max {{{-FLT_MAX, -FLT_MAX, -FLT_MAX}}};
-					vec3d avg_total = ZERO_VECTOR;
-					vec3d avg_normal = ZERO_VECTOR;
+					cfread_vector(&pm->ins[idx].offset, fp);
 
 					// read in all the faces
-					for(int idx2 = 0; idx2 < num_faces; idx2++){
-						std::array<int, 3> faces;
+					for(idx2=0; idx2<pm->ins[idx].num_faces; idx2++){
 						// read in 3 vertices
-						for(int idx3 = 0; idx3 < 3; idx3++){
-							faces[idx3] = cfread_int(fp);
-
-							//UV coords are no longer needed
-							cfread_float(fp);
-							cfread_float(fp);
+						for(idx3=0; idx3<3; idx3++){
+							pm->ins[idx].faces[idx2][idx3] = cfread_int(fp);
+							pm->ins[idx].u[idx2][idx3] = cfread_float(fp);
+							pm->ins[idx].v[idx2][idx3] = cfread_float(fp);
 						}
+						vec3d tempv;
 
-						const vec3d& v1 = vertices[faces[0]];
-						const vec3d& v2 = vertices[faces[1]];
-						const vec3d& v3 = vertices[faces[2]];
-
-						vec3d normal;
 						//get three points (rotated) and compute normal
-						vm_vec_perp(&normal, &v1, &v2, &v3);
 
-						vm_vec_min(&min, &min, &v1);
-						vm_vec_min(&min, &min, &v2);
-						vm_vec_min(&min, &min, &v3);
-						vm_vec_max(&max, &max, &v1);
-						vm_vec_max(&max, &max, &v2);
-						vm_vec_max(&max, &max, &v3);
+						vm_vec_perp(&tempv,
+							&pm->ins[idx].vecs[pm->ins[idx].faces[idx2][0]],
+							&pm->ins[idx].vecs[pm->ins[idx].faces[idx2][1]],
+							&pm->ins[idx].vecs[pm->ins[idx].faces[idx2][2]]);
 
-						vec3d avg = (v1 + v2 + v3) * (1.0f / 3.0f);
-						avg_total += avg;
-						avg_normal += normal;
+						vm_vec_normalize_safe(&tempv);
+
+						pm->ins[idx].norm[idx2] = tempv;
 //						mprintf(("insignorm %.2f %.2f %.2f\n",pm->ins[idx].norm[idx2].xyz.x, pm->ins[idx].norm[idx2].xyz.y, pm->ins[idx].norm[idx2].xyz.z));
-					}
 
-					ins.position = avg_total / static_cast<float>(num_faces) + offset;
-					vec3d bb = max - min;
-					ins.diameter = std::max({bb.xyz.x, bb.xyz.y, bb.xyz.z});
-					vm_vector_2_matrix(&ins.orientation, &avg_normal, &vmd_z_vector);
-				}
+					}
 				}
 				break;
 
@@ -3070,6 +2942,9 @@ modelread_status read_model_file(polymodel* pm, const char* filename, ErrorType 
 //reads a binary file containing a 3d model
 modelread_status read_and_process_model_file(polymodel* pm, const char* filename, int n_subsystems, model_subsystem* subsystems, ErrorType error_type, model_read_deferred_tasks& deferredTasks)
 {
+	Assert(strlen(filename) < FILESPEC_LENGTH );
+	strcpy_s(pm->filename, filename);
+	
 	modelread_status status = read_model_file(pm, filename, error_type, deferredTasks);
 
 	//By now, we have finished reading this model. If it was virtual, we might have accumulated cache.
@@ -3577,8 +3452,8 @@ int model_load(const  char* filename, ship_info* sip, ErrorType error_type, bool
 		pm->submodel[i].collision_tree_index = model_create_bsp_collision_tree();
 		bsp_collision_tree* tree             = model_get_bsp_collision_tree(pm->submodel[i].collision_tree_index);
 
-		Macro_ubyte_bounds = pm->submodel[i].bsp_data + pm->submodel[i].bsp_data_size;
-		model_collide_parse_bsp(tree, pm->submodel[i].bsp_data, pm->version);
+		Macro_ubyte_bounds = pm->submodel[i].bsp_data.get() + pm->submodel[i].bsp_data_size;
+		model_collide_parse_bsp(tree, pm->submodel[i].bsp_data.get(), pm->version);
 		Macro_ubyte_bounds = nullptr;
 	}
 
@@ -3761,10 +3636,9 @@ void model_set_bay_path_nums(polymodel *pm)
 {
 	int i;
 
-	if (pm->ship_bay != NULL)
+	if (pm->ship_bay != nullptr)
 	{
-		vm_free(pm->ship_bay);
-		pm->ship_bay = NULL;
+		pm->ship_bay.reset();
 	}
 
 	/*
@@ -3775,8 +3649,7 @@ void model_set_bay_path_nums(polymodel *pm)
 	*/
 
 	// malloc out storage for the path information
-	pm->ship_bay = (ship_bay *) vm_malloc(sizeof(ship_bay));
-	Assert(pm->ship_bay != NULL);
+	pm->ship_bay = make_shared<ship_bay_t>();
 
 	pm->ship_bay->num_paths = 0;
 	// TODO: determine if zeroing out here is affecting any earlier initializations
@@ -3830,43 +3703,6 @@ void model_set_bay_path_nums(polymodel *pm)
 			pm->ship_bay->path_indexes[i] = 0;	// avoid crashes
 		}
 	}
-}
-
-// Get "parent" submodel for live debris submodel
-int model_get_parent_submodel_for_live_debris( int model_num, int live_debris_model_num )
-{
-	polymodel *pm = model_get(model_num);
-
-	Assert(pm->submodel[live_debris_model_num].flags[Model::Submodel_flags::Is_live_debris]);
-
-	int mn;
-	bsp_info *child;
-
-	// Start with the high level of detail hull 
-	// Check all its children until we find the submodel to which the live debris belongs
-	child = &pm->submodel[pm->detail[0]];
-	mn = child->first_child;
-
-	while (mn > 0) {
-		child = &pm->submodel[mn];
-
-		if (child->num_live_debris > 0) {
-			// check all live debris submodels for the current child
-			for (int idx=0; idx<child->num_live_debris; idx++) {
-				if (child->live_debris[idx] == live_debris_model_num) {
-					return mn;
-				}
-			}
-			// DKA 5/26/99: can multiple live debris subsystems with each ship
-			// NO LONGER TRUE Can only be 1 submodel with live debris
-			// Error( LOCATION, "Could not find parent submodel for live debris.  Possible model error");
-		}
-
-		// get next child
-		mn = child->next_sibling;
-	}
-	Error( LOCATION, "Could not find parent submodel for live debris");
-	return -1;
 }
 
 
@@ -4925,6 +4761,7 @@ void model_get_moving_submodel_list(SCP_vector<int> &submodel_vector, const obje
 	
 	int model_instance_num;
 	int model_num;
+
 	if (objp->type == OBJ_SHIP) {
 		model_instance_num = Ships[objp->instance].model_instance_num;
 		model_num = Ship_info[Ships[objp->instance].ship_info_index].model_num;
@@ -5429,6 +5266,14 @@ int model_find_bay_path(int modelnum, char *bay_path_name)
 	}
 
 	return -1;
+}
+
+bool model_has_hangar_bay(int modelnum)
+{
+	auto pm = model_get(modelnum);
+	Assertion(pm, "modelnum %d does not exist!", modelnum);
+
+	return ( pm->ship_bay && (pm->ship_bay->num_paths > 0) );
 }
 
 int model_create_bsp_collision_tree()

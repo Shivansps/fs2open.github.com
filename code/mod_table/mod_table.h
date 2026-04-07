@@ -26,6 +26,13 @@ typedef enum {
 	SAVE
 } EscapeKeyBehaviorInOptions;
 
+// Typedef for 'Target Hostile Bomb or Bomber' control behavior --wookieejedi
+typedef enum {
+	BOMBS_AND_BOMBERS,
+	ONLY_BOMBS,
+	ONLY_BOMBERS
+} TargetBomborBomberBehaviorOptions;
+
 // And one for splash screens
 struct splash_screen {
 	SCP_string filename;
@@ -177,6 +184,7 @@ extern bool Disabled_or_disrupted_engines_silent;
 extern std::array<std::tuple<float, float>, 6> Fred_spacemouse_nonlinearity;
 extern bool Randomize_particle_rotation;
 extern bool Disable_shield_effects;
+extern bool Disable_all_noncustom_generic_debris;
 extern bool Calculate_subsystem_hitpoints_after_parsing;
 extern bool Disable_internal_loadout_restoration_system;
 extern bool Contrails_use_absolute_speed;
@@ -187,13 +195,16 @@ extern bool Hide_main_rearm_items_in_comms_gauge;
 extern bool Fix_scripted_velocity;
 extern color Overhead_line_colors[MAX_SHIP_SECONDARY_BANKS];
 extern bool Preload_briefing_icon_models;
-extern EscapeKeyBehaviorInOptions escape_key_behavior_in_options;
+extern EscapeKeyBehaviorInOptions Escape_key_behavior_in_options;
+extern bool Target_bomb_or_bomber_use_distance;
+extern TargetBomborBomberBehaviorOptions Target_bomb_or_bomber_behavior;
 extern bool Fix_asteroid_bounding_box_check;
 extern bool Disable_intro_movie;
 extern bool Show_locked_status_scramble_missions;
 extern bool Disable_expensive_turret_target_check;
 extern float Shield_percent_skips_damage;
 extern float Min_radius_for_persistent_debris;
+extern bool Zero_radius_explosions_skip_fireballs;
 
 void mod_table_init();
 void mod_table_post_process();

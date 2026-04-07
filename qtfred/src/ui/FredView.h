@@ -6,12 +6,14 @@
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QComboBox>
 #include <QtGui/QSurface>
+#include <QCloseEvent>
 
 #include <mission/FredRenderer.h>
 #include <mission/IDialogProvider.h>
 
 #include <memory>
 #include <ui/widgets/ColorComboBox.h>
+#include <ui/widgets/PropComboBox.h>
 
 namespace fso {
 namespace fred {
@@ -22,6 +24,7 @@ class RenderWidget;
 namespace dialogs {
 class ShipEditorDialog;
 class WingEditorDialog;
+class PropEditorDialog;
 }
 
 namespace Ui {
@@ -36,7 +39,7 @@ class FredView: public QMainWindow, public IDialogProvider {
 	~FredView() override;
 	void setEditor(Editor* editor, EditorViewport* viewport);
 
-	void loadMissionFile(const QString& pathName);
+	void loadMissionFile(const QString& pathName, int flags = 0);
 
 	QSurface* getRenderSurface();
 	RenderWidget* getRenderWidget();
@@ -55,6 +58,8 @@ class FredView: public QMainWindow, public IDialogProvider {
 	 void on_actionSave_As_triggered(bool);
 	 void on_actionSave_triggered(bool);
 	void on_actionExit_triggered(bool);
+	void on_actionLoad_Template_triggered(bool);
+	void on_actionSave_As_Template_triggered(bool);
 
 	void on_actionConstrainX_triggered(bool enabled);
 	void on_actionConstrainXY_triggered(bool enabled);
@@ -102,6 +107,7 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void on_actionObjects_triggered(bool);
 	void on_actionShips_triggered(bool);
 	void on_actionWings_triggered(bool);
+	void on_actionProps_triggered(bool);
 	void on_actionCampaign_triggered(bool);
 	void on_actionCommand_Briefing_triggered(bool);
 	void on_actionDebriefing_triggered(bool);
@@ -140,13 +146,10 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void on_actionPrev_Subsystem_triggered(bool);
 	void on_actionCancel_Subsystem_triggered(bool);
 
-	void on_actionMove_Ships_When_Undocking_triggered(bool);
-
-	void on_actionAlways_Save_Display_Names_triggered(bool);
-	void on_actionError_Checker_Checks_Potential_Issues_triggered(bool);
 	void on_actionError_Checker_triggered(bool);
 
 	void on_actionAbout_triggered(bool);
+	void on_actionMission_Statistics_triggered(bool);
 	void on_actionBackground_triggered(bool);
 	void on_actionShield_System_triggered(bool);
 	void on_actionSet_Global_Ship_Flags_triggered(bool);
@@ -166,7 +169,9 @@ class FredView: public QMainWindow, public IDialogProvider {
 	 */
 	void viewWindowActivated();
  protected:
-	bool event(QEvent* event) override;
+ bool event(QEvent* event) override;
+	void changeEvent(QEvent* event) override;
+ 	void closeEvent(QCloseEvent* event) override;
 
 	void keyPressEvent(QKeyEvent* event) override;
 	void keyReleaseEvent(QKeyEvent* event) override;
@@ -174,6 +179,13 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void mouseDoubleClickEvent(QMouseEvent* event) override;
 
  private:
+	bool saveMissionToCurrentPath();
+	bool saveMissionAs();
+	void saveAsTemplate();
+	void loadTemplate();
+	bool maybePromptToSaveMissionChanges(const QString& actionDescription);
+	bool isMissionModified() const;
+
 	void on_mission_loaded(const std::string& filepath);
 
 	void connectActionToViewSetting(QAction* option, bool* destination);
@@ -195,6 +207,9 @@ class FredView: public QMainWindow, public IDialogProvider {
 
 	void initializeStatusBar();
 	void initializePopupMenus();
+	void populateMoveToLayerMenu(int targetObject);
+	void openLayerManagerDialog();
+	void ensureViewportFocus();
 
 	void onGroupSelected(int group);
 	void onSetGroup(int group);
@@ -208,6 +223,7 @@ class FredView: public QMainWindow, public IDialogProvider {
 	QAction* _editObjectAction = nullptr;
 	QAction* _editOrientPositionAction = nullptr;
 	QAction* _editWingAction = nullptr;
+	QMenu* _moveToLayerMenu = nullptr;
 
 	QMenu* _controlModeMenu = nullptr;
 	QAction* _controlModeCamera = nullptr;
@@ -218,15 +234,18 @@ class FredView: public QMainWindow, public IDialogProvider {
 	std::unique_ptr<Ui::FredView> ui;
 
 	std::unique_ptr<ColorComboBox> _shipClassBox;
+	std::unique_ptr<PropComboBox> _propClassBox;
 
 	Editor* fred = nullptr;
 	EditorViewport* _viewport = nullptr;
 
 	fso::fred::dialogs::ShipEditorDialog* _shipEditorDialog = nullptr;
 	fso::fred::dialogs::WingEditorDialog* _wingEditorDialog = nullptr;
+	fso::fred::dialogs::PropEditorDialog* _propEditorDialog = nullptr;
 
 	bool _inKeyPressHandler = false;
 	bool _inKeyReleaseHandler = false;
+	bool _missionModified = false;
 
 	void onUpdateConstrains();
 	void onUpdateEditingMode();
@@ -234,10 +253,12 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void onUpdateCameraControlActions();
 	void onUpdateSelectionLock();
 	void onUpdateShipClassBox();
+	void onUpdatePropClassBox();
 	void onUpdateEditorActions();
 	void onUpdateWingActionStatus();
 
 	void onShipClassSelected(int ship_class);
+	void onPropClassSelected(int prop_class);
 
 	void windowActivated();
 	void windowDeactivated();

@@ -2802,6 +2802,18 @@ void control_check_indicate()
 	Control_check_count = 0;
 }
 
+/**
+ * @brief Checks if a control is being used by the player this frame by checking the bound control input bindings.
+ * 
+ * @param[in] id    The IoActionId of the control to check
+ * @param[in] key   DO NOT USE.  Key combination acquired from game_poll(), or -1 to check against a previous poll
+ * 
+ * @returns 0 If the control was disabled by a mod, or
+ * @returns 0 If locked by a script, or
+ * @returns 0 If controls need to be ignored for multiplayer, or
+ * @returns 0 If the control wasn't used, or
+ * @returns 1 If the control was used
+ */
 int check_control_used(int id, int key)
 {
 	// Make sure mouse_down() is only called once during any logic path, 
@@ -2888,17 +2900,10 @@ int check_control_used(int id, int key)
 
 	// special case to allow actual mouse wheel to work with trigger controls --wookieejedi
 	if (item.type == CC_TYPE_TRIGGER) {
-
-		int first_btn = 1 << item.first.get_btn();
-		int second_btn = 1 << item.second.get_btn();
-
-		if ( (first_btn >= LOWEST_MOUSE_WHEEL && first_btn <= HIGHEST_MOUSE_WHEEL) ||
-			 (second_btn >= LOWEST_MOUSE_WHEEL && second_btn <= HIGHEST_MOUSE_WHEEL) ) {
-			if ( mouse_down(item.first) || mouse_down(item.second) ) {
-				// Mouse wheel bound to this trigger control was pressed, control activated
-				control_used(id);
-				return 1;
-			}
+		if ( mouse_down(item.first, true) || mouse_down(item.second, true) ) {
+			// Mouse wheel bound to this trigger control was pressed, control activated
+			control_used(id);
+			return 1;
 		}
 	}
 

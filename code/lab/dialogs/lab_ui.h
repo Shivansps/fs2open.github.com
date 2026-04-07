@@ -32,9 +32,12 @@ class LabUi {
 	static void build_object_list();
 	static void build_asteroid_list();
 	static void build_debris_list();
-	void build_background_list() const;
+	static void build_prop_list();
+	static void build_prop_subtype_list();
+	static void build_background_list();
 	void show_render_options();
 	void show_object_options() const;
+	static void show_controls_reference();
 	void show_object_selector() const;
 	void show_background_selector() const;
 	void build_toolbar_entries();
@@ -86,6 +89,10 @@ class LabUi {
 	bool show_object_selection_dialog = true;
 	bool show_object_options_dialog = false;
 	bool show_background_selection_dialog = true;
+	bool show_controls_reference_dialog = false;
+
+	// used to track the "Reset View" function
+	bool reset_view = false;
 
 	// used to track the "Close Lab" function
 	bool close_lab = false;
@@ -114,6 +121,7 @@ class LabUi {
 	bool show_weapons = false;
 	bool show_emissive_lighting = false;
 	bool show_particles = true;
+	bool use_orthographic_projection = false;
 	
 	std::optional<vec3d> volumetrics_pos_backup = std::nullopt;
 };

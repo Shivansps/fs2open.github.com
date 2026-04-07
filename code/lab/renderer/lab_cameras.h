@@ -29,10 +29,11 @@ public:
 	/// </summary>
 	/// <param name="dx">Mouse delta on the x axis</param>
 	/// <param name="dy">Mouse delta on the y axis</param>
+	/// <param name="dz">Mouse wheel delta</param>
 	/// <param name="lmbDown">State of the left mouse button</param>
 	/// <param name="rmbDown">State of the right mouse button</param>
 	/// <param name="modifierKeys">State of the various modifier keys. See keys.h</param>
-	virtual void handleInput(int dx, int dy, bool lmbDown, bool rmbDown, int modifierKeys) = 0;
+	virtual void handleInput(int dx, int dy, int dz, bool lmbDown, bool rmbDown, int modifierKeys) = 0;
 
 	/// <summary>
 	/// Called by the lab manager when the displayed object changes
@@ -50,6 +51,12 @@ public:
 	/// </summary>
 	/// <returns></returns>
 	virtual void updateCamera() = 0;
+
+	/// Resets the camera orientation, pan, and zoom to default values
+	virtual void resetView() {}
+
+	/// Returns the distance from the camera to the point of interest, used to size the orthographic frustum.
+	virtual float getCameraDistance() const { return 0.0f; }
 };
 
 class OrbitCamera : public LabCamera {
@@ -57,19 +64,22 @@ public:
 	OrbitCamera() : LabCamera(cam_create("Lab orbit camera")) {}
 
 	SCP_string getUsageInfo() override {
-		return "Hold RMB to rotate the Camera. Hold Shift + RMB to zoom in or out.";
+		return "Hold LMB to rotate the model. Hold RMB to rotate the camera. Hold Shift + RMB to pan on X/Y. Use mouse wheel to zoom in/out.";
 	}
 
 	SCP_string getOnFrameInfo() override {
 		SCP_stringstream ss;
 		ss.setf(std::ios::fixed);
 
-		ss << "Phi: " << phi << " Theta: " << theta << " Distance: " << distance;
+		ss << "Phi: " << phi << " Theta: " << theta << " Distance: " << distance << " Pan: (" << pan_offset.xyz.x << ", "
+		   << pan_offset.xyz.y << ", " << pan_offset.xyz.z << ")";
 
 		return ss.str();
 	}
 
-	void handleInput(int dx, int dy, bool /*lmbDown*/, bool rmbDown, int modifierKeys) override;
+	void handleInput(int dx, int dy, int dz, bool /*lmbDown*/, bool rmbDown, int modifierKeys) override;
+
+	void resetView() override;
 
 	void displayedObjectChanged() override;
 
@@ -77,8 +87,15 @@ public:
 
 	void updateCamera() override;
 
+	float getCameraDistance() const override { return distance; }
+
   private:
-	float distance = 100.0f;
-	float phi = 1.24f;
-	float theta = 2.25f;
+	static constexpr float DEFAULT_DISTANCE = 100.0f;
+	static constexpr float DEFAULT_PHI = 1.24f;
+	static constexpr float DEFAULT_THETA = 2.25f;
+
+	float distance = DEFAULT_DISTANCE;
+	float phi = DEFAULT_PHI;
+	float theta = DEFAULT_THETA;
+	vec3d pan_offset = vmd_zero_vector;
 };

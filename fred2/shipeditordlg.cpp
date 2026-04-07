@@ -27,6 +27,7 @@
 #include "playerman/player.h"				// used for the max_keyed_target stuff
 #include "IgnoreOrdersDlg.h"
 #include "mission/missionparse.h"
+#include "missioneditor/common.h"
 #include "model/model.h"
 #include "starfield/starfield.h"
 #include "jumpnode/jumpnode.h"
@@ -566,11 +567,11 @@ void CShipEditorDlg::initialize_data(int full_update)
 								d_cue = Ships[i].departure_cue;
 								m_arrival_location = static_cast<int>(Ships[i].arrival_location);
 								m_arrival_dist.init(Ships[i].arrival_distance);
-								m_arrival_target = Ships[i].arrival_anchor;
+								m_arrival_target = anchor_to_target(Ships[i].arrival_anchor);
 								m_arrival_delay.init(Ships[i].arrival_delay);
 								m_departure_location = static_cast<int>(Ships[i].departure_location);
 								m_departure_delay.init(Ships[i].departure_delay);
-								m_departure_target = Ships[i].departure_anchor;
+								m_departure_target = anchor_to_target(Ships[i].departure_anchor);
 
 							} else {
 								cue_init++;
@@ -586,7 +587,7 @@ void CShipEditorDlg::initialize_data(int full_update)
 								m_arrival_delay.set(Ships[i].arrival_delay);
 								m_departure_delay.set(Ships[i].departure_delay);
 
-								if (Ships[i].arrival_anchor != m_arrival_target){
+								if (Ships[i].arrival_anchor != target_to_anchor(m_arrival_target)){
 									m_arrival_target = -1;
 								}
 
@@ -600,7 +601,7 @@ void CShipEditorDlg::initialize_data(int full_update)
 									m_update_departure = 0;
 								}
 
-								if ( Ships[i].departure_anchor != m_departure_target ){
+								if (Ships[i].departure_anchor != target_to_anchor(m_departure_target)){
 									m_departure_target = -1;
 								}
 							}
@@ -805,11 +806,11 @@ void CShipEditorDlg::initialize_data(int full_update)
 	// of the drop-down list.
 	if (m_arrival_target >= 0)
 	{
-		if (m_arrival_target & SPECIAL_ARRIVAL_ANCHOR_FLAG)
+		if (m_arrival_target & ANCHOR_SPECIAL_ARRIVAL)
 		{
 			// figure out what the box represents this as
 			char tmp[NAME_LENGTH + 15];
-			stuff_special_arrival_anchor_name(tmp, m_arrival_target, 0);
+			stuff_special_arrival_anchor_name(tmp, m_arrival_target, false);
 
 			// find it in the box
 			m_arrival_target = box->FindStringExact(-1, tmp);
@@ -1296,14 +1297,14 @@ int CShipEditorDlg::update_ship(int ship)
 	// the display name was precalculated, so now just assign it
 	if (m_ship_display_name == m_ship_name || m_ship_display_name.CompareNoCase("<none>") == 0)
 	{
-		if (Ships[ship].flags[Ship::Ship_Flags::Has_display_name])
+		if (Ships[ship].has_display_name())
 			set_modified();
 		Ships[ship].display_name = "";
 		Ships[ship].flags.remove(Ship::Ship_Flags::Has_display_name);
 	}
 	else
 	{
-		if (!Ships[ship].flags[Ship::Ship_Flags::Has_display_name])
+		if (!Ships[ship].has_display_name())
 			set_modified();
 		Ships[ship].display_name = m_ship_display_name;
 		Ships[ship].flags.set(Ship::Ship_Flags::Has_display_name);
@@ -1407,11 +1408,11 @@ int CShipEditorDlg::update_ship(int ship)
 		m_departure_delay.save(&Ships[ship].departure_delay);
 		if (m_arrival_target >= 0) {
 			z = (int)((CComboBox *) GetDlgItem(IDC_ARRIVAL_TARGET))->GetItemData(m_arrival_target);
-			MODIFY(Ships[ship].arrival_anchor, z);
+			MODIFY(Ships[ship].arrival_anchor, target_to_anchor(z));
 
 			// if the arrival is not hyperspace or docking bay -- force arrival distance to be
 			// greater than 2*radius of target.
-			if (((m_arrival_location != static_cast<int>(ArrivalLocation::FROM_DOCK_BAY)) && (m_arrival_location != static_cast<int>(ArrivalLocation::AT_LOCATION))) && (z >= 0) && !(z & SPECIAL_ARRIVAL_ANCHOR_FLAG)) {
+			if (((m_arrival_location != static_cast<int>(ArrivalLocation::FROM_DOCK_BAY)) && (m_arrival_location != static_cast<int>(ArrivalLocation::AT_LOCATION))) && (z >= 0) && !(z & ANCHOR_SPECIAL_ARRIVAL)) {
 			d = int(std::min(500.0f, 2.0f * Objects[Ships[ship].objnum].radius));
 				if ((Ships[ship].arrival_distance < d) && (Ships[ship].arrival_distance > -d)) {
 					str.Format("Ship must arrive at least %d meters away from target.\n"
@@ -1430,7 +1431,7 @@ int CShipEditorDlg::update_ship(int ship)
 		}
 		if (m_departure_target >= 0) {
 			z = (int)((CComboBox *) GetDlgItem(IDC_DEPARTURE_TARGET))->GetItemData(m_departure_target);
-			MODIFY(Ships[ship].departure_anchor, z );
+			MODIFY(Ships[ship].departure_anchor, target_to_anchor(z));
 		}
 	}
 
@@ -2495,7 +2496,7 @@ void CShipEditorDlg::OnRestrictArrival()
 
 	arrive_from_ship = (int)box->GetItemData(m_arrival_target);
 
-	if (!ship_has_dock_bay(arrive_from_ship))
+	if (!ship_has_hangar_bay(arrive_from_ship))
 	{
 		Int3();
 		return;
@@ -2539,7 +2540,7 @@ void CShipEditorDlg::OnRestrictDeparture()
 
 	depart_to_ship = (int)box->GetItemData(m_departure_target);
 
-	if (!ship_has_dock_bay(depart_to_ship))
+	if (!ship_has_hangar_bay(depart_to_ship))
 	{
 		Int3();
 		return;
