@@ -5,6 +5,7 @@
 
 #include "globalincs/pstypes.h"
 #include "utils/unicode.h"
+#include "speech.h"
 
 static SCP_vector<SCP_string> cached_voices;
 static bool voices_cached = false;

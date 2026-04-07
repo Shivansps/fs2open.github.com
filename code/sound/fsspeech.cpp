@@ -80,7 +80,7 @@ static SCP_vector<int> ttsvoice_enumerator()
 {
 	SCP_vector<int> vals;
 	auto voices = speech_enumerate_voices();
-	for (size_t i = 0; i < voices.size(); ++i) {
+	for (int i = 0; i < static_cast<int>(voices.size()); ++i) {
 		vals.push_back(i);
 	}
 	return vals;

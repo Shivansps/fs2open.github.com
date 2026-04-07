@@ -2,7 +2,7 @@
 #include <dlfcn.h> 
 #include "globalincs/pstypes.h"
 #include "utils/unicode.h"
-#include "external_dll/externalcode.h"
+#include "speech.h"
 
 // Adapted from libspeechd.h / speechd_types.h
 // https://github.com/brailcom/speechd/tree/master/src/api/c
