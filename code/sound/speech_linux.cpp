@@ -56,7 +56,7 @@ static pfn_free_spd_voices 				p_free_spd_voices = nullptr;
 static bool ensure_speechd_lib()
 {
     if (lib_handle) return true;
-    lib_handle = dlopen("libspeechd.so.3", RTLD_LAZY | RTLD_LOCAL);
+    lib_handle = dlopen("libspeechd.so.2", RTLD_LAZY | RTLD_LOCAL);
     if (!lib_handle) {
 		lib_handle = dlopen("libspeechd.so", RTLD_LAZY | RTLD_LOCAL);
     }
