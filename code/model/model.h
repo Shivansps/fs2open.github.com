@@ -137,7 +137,6 @@ struct submodel_instance
 	TIMESTAMP stepped_translation_started;
 
 	bool	blown_off = false;						// If set, this subobject is blown off
-	bool	collision_checked = false;
 
 	// These fields are the true standard reference for submodel rotation.  They should seldom be read directly
 	// and should almost never be written directly.  In most cases, coders should prefer cur_angle and prev_angle.
@@ -1071,7 +1070,7 @@ constexpr uint64_t MR_NO_INSIGNIA = static_cast<uint64_t>(1) << static_cast<uint
 #define MR_DEBUG_PATHS				(1<<1)		// Show the paths associated with a model
 #define MR_DEBUG_RADIUS				(1<<2)		// Show the radius around the object
 #define MR_DEBUG_SHIELDS			(1<<3)		// Show the shield mesh
-#define MR_DEBUG_BAY_PATHS			(1<<4)		// draw bay paths
+#define MR_DEBUG_BAY_PATHS			(1<<4)		// draw fighter bay paths
 #define MR_DEBUG_NO_DIFFUSE			(1<<5)
 #define MR_DEBUG_NO_SPEC			(1<<6)
 #define MR_DEBUG_NO_NORMAL			(1<<7)
@@ -1081,6 +1080,7 @@ constexpr uint64_t MR_NO_INSIGNIA = static_cast<uint64_t>(1) << static_cast<uint
 #define MR_DEBUG_NO_AMBIENT			(1<<11)
 #define MR_DEBUG_NO_MISC			(1<<12)
 #define MR_DEBUG_NO_REFLECT			(1<<13)
+#define MR_DEBUG_DOCK_POINTS		(1<<14)		// draw docking bay slot positions and normals
 
 //Defines for the render parameter of model_render, model_really_render and model_render_buffers
 #define MODEL_RENDER_OPAQUE 1
@@ -1282,6 +1282,12 @@ typedef struct mc_info {
 	float   radius = 0;                 // If MC_CHECK_THICK is set, checks a sphere moving with the radius.
 	int     lod = 0;                    // Which detail level of the submodel to check instead
 
+	// Per-submodel collision_checked flags (indexed by submodel number).
+	// When non-empty, model_collide uses this to determine which submodels to skip.
+	// Auto-initialized from pmi in model_collide when empty; callers may pre-populate
+	// to control which submodels are checked (e.g., rotating submodel collision).
+	SCP_vector<char> collision_checked;
+
 	// Return values
 	int     num_hits = 0;               // How many collisions were found
 	float   hit_dist = 0.0f;            // The distance from p0 to hitpoint
@@ -1465,6 +1471,8 @@ void model_render_shields( polymodel * pm, uint64_t flags );
 void model_draw_paths_htl( int model_num, uint64_t flags );
 
 void model_draw_bay_paths_htl(int model_num);
+
+void model_draw_dock_points_htl(int model_num);
 
 bool model_interp_config_buffer(indexed_vertex_source *vert_src, vertex_buffer *vb, bool update_ibuffer_only);
 bool model_interp_pack_buffer(indexed_vertex_source *vert_src, vertex_buffer *vb);

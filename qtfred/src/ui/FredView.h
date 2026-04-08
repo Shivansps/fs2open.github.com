@@ -2,11 +2,14 @@
 
 #include <QMainWindow>
 #include <QAction>
+#include <QActionGroup>
 #include <QtGui/QSurfaceFormat>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QComboBox>
 #include <QtGui/QSurface>
 #include <QCloseEvent>
+
+#include "missioneditor/missionsave.h"
 
 #include <mission/FredRenderer.h>
 #include <mission/IDialogProvider.h>
@@ -58,8 +61,16 @@ class FredView: public QMainWindow, public IDialogProvider {
 	 void on_actionSave_As_triggered(bool);
 	 void on_actionSave_triggered(bool);
 	void on_actionExit_triggered(bool);
+	void on_actionRevert_triggered(bool);
+	void on_actionUndo_triggered(bool);
+	void on_actionDisable_Undo_triggered(bool checked);
 	void on_actionLoad_Template_triggered(bool);
 	void on_actionSave_As_Template_triggered(bool);
+	void on_actionFS2_Open_triggered(bool);
+	void on_actionFS2_Retail_triggered(bool);
+	void on_actionFS2_Compatibility_triggered(bool);
+	void on_actionFS1_Mission_triggered(bool);
+	void on_actionRun_FreeSpace_2_Open_triggered(bool);
 
 	void on_actionConstrainX_triggered(bool enabled);
 	void on_actionConstrainXY_triggered(bool enabled);
@@ -71,9 +82,6 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void on_actionSelect_triggered(bool enabled);
 	void on_actionSelectMove_triggered(bool enabled);
 	void on_actionSelectRotate_triggered(bool enabled);
-
-	void on_actionHide_Marked_Objects_triggered(bool enabled);
-	void on_actionShow_All_Hidden_Objects_triggered(bool enabled);
 
 	void on_actionLock_Marked_Objects_triggered(bool enabled);
 	void on_actionUnlock_All_Objects_triggered(bool enabled);
@@ -131,9 +139,6 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void on_actionSave_Camera_Pos_triggered(bool);
 	void on_actionRestore_Camera_Pos_triggered(bool);
 
-	void on_actionTool_Bar_triggered(bool enabled);
-	void on_actionStatus_Bar_triggered(bool enabled);
-
 	void on_actionClone_Marked_Objects_triggered(bool);
 	void on_actionDelete_triggered(bool);
 	void on_actionDelete_Wing_triggered(bool);
@@ -145,6 +150,10 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void on_actionNext_Subsystem_triggered(bool);
 	void on_actionPrev_Subsystem_triggered(bool);
 	void on_actionCancel_Subsystem_triggered(bool);
+
+	void on_actionNext_Object_triggered(bool);
+	void on_actionPrev_Object_triggered(bool);
+	void on_actionMark_Wing_triggered(bool);
 
 	void on_actionError_Checker_triggered(bool);
 
@@ -170,6 +179,7 @@ class FredView: public QMainWindow, public IDialogProvider {
 	void viewWindowActivated();
  protected:
  bool event(QEvent* event) override;
+	void changeEvent(QEvent* event) override;
  	void closeEvent(QCloseEvent* event) override;
 
 	void keyPressEvent(QKeyEvent* event) override;
@@ -229,6 +239,7 @@ class FredView: public QMainWindow, public IDialogProvider {
 	QAction* _controlModeCurrentShip = nullptr;
 
 	QString saveName = nullptr;
+	MissionFormat _missionSaveFormat = MissionFormat::STANDARD;
 
 	std::unique_ptr<Ui::FredView> ui;
 

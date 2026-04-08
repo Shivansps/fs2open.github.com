@@ -79,8 +79,6 @@ void init_fred_colors() {
 int grid_colors_inited = 0;
 color Fred_grid_bright;
 color Fred_grid_dark;
-color Fred_grid_bright_aa;
-color Fred_grid_dark_aa;
 
 void draw_asteroid_field() {
 	int i, j;
@@ -327,24 +325,13 @@ void FredRenderer::render_grid(grid* gridp) {
 	if (!grid_colors_inited) {
 		grid_colors_inited = 1;
 
-		gr_init_alphacolor(&Fred_grid_dark_aa, 64, 64, 64, 255);
-		gr_init_alphacolor(&Fred_grid_bright_aa, 128, 128, 128, 255);
 		gr_init_color(&Fred_grid_dark, 64, 64, 64);
 		gr_init_color(&Fred_grid_bright, 128, 128, 128);
 	}
 
 	ncols = gridp->ncols;
 	nrows = gridp->nrows;
-	if (double_fine_gridlines) {
-		ncols *= 2;
-		nrows *= 2;
-	}
-
-	if (view().Aa_gridlines) {
-		gr_set_color_fast(&Fred_grid_dark_aa);
-	} else {
-		gr_set_color_fast(&Fred_grid_dark);
-	}
+	gr_set_color_fast(&Fred_grid_dark);
 
 	//	Draw the column lines.
 	for (i = 0; i <= ncols; i++) {
@@ -359,11 +346,7 @@ void FredRenderer::render_grid(grid* gridp) {
 	nrows = gridp->nrows / 2;
 
 	// now draw the larger, brighter gridlines that is x10 the scale of smaller one.
-	if (view().Aa_gridlines) {
-		gr_set_color_fast(&Fred_grid_bright_aa);
-	} else {
-		gr_set_color_fast(&Fred_grid_bright);
-	}
+	gr_set_color_fast(&Fred_grid_bright);
 
 	for (i = 0; i <= ncols; i++) {
 		g3_draw_htl_line(&gridp->gpoints5[i], &gridp->gpoints6[i]);
@@ -905,6 +888,10 @@ void FredRenderer::render_one_model_htl(object* objp,
 
 		uint debug_flags = 0;
 		if (view().Show_dock_points) {
+			debug_flags |= MR_DEBUG_DOCK_POINTS;
+		}
+
+		if (view().Show_bay_paths) {
 			debug_flags |= MR_DEBUG_BAY_PATHS;
 		}
 
@@ -924,21 +911,27 @@ void FredRenderer::render_one_model_htl(object* objp,
 			flags |= MR_FULL_DETAIL;
 		}
 
+		g3_done_instance(false);
+
+		// Outline pass: use a dedicated pass with MR_NO_POLYS so is_outlines_only_htl fires
+		// in the renderer. Modern HTL models don't have outline_buffer, so relying on
+		// MR_SHOW_OUTLINE_HTL alone (without MR_NO_POLYS) silently does nothing.
 		if (Fred_outline) {
-			flags |= MR_SHOW_OUTLINE_HTL;
+			model_render_params outline_info;
+			outline_info.set_color(Fred_outline >> 16, (Fred_outline >> 8) & 0xff, Fred_outline & 0xff);
+			outline_info.set_flags(flags | MR_SHOW_OUTLINE_HTL | MR_NO_POLYS | MR_NO_LIGHTING | MR_NO_TEXTURING);
+			model_render_immediate(&outline_info, Ship_info[Ships[z].ship_info_index].model_num, Ships[z].model_instance_num, &objp->orient, &objp->pos);
 		}
 
-		model_render_params render_info;
-		render_info.set_debug_flags(debug_flags);
-		render_info.set_color(Fred_outline >> 16, (Fred_outline >> 8) & 0xff, Fred_outline & 0xff);
-		render_info.set_replacement_textures(model_get_instance(Ships[z].model_instance_num)->texture_replace);
-		render_info.set_flags(flags);
+		if (view().Show_ship_models) {
+			model_render_params render_info;
+			render_info.set_debug_flags(debug_flags);
+			render_info.set_replacement_textures(model_get_instance(Ships[z].model_instance_num)->texture_replace);
+			render_info.set_flags(flags);
+			model_render_immediate(&render_info, Ship_info[Ships[z].ship_info_index].model_num, Ships[z].model_instance_num, &objp->orient, &objp->pos);
+		}
 
-		g3_done_instance(0);
-
-		model_render_immediate(&render_info, Ship_info[Ships[z].ship_info_index].model_num, Ships[z].model_instance_num, &objp->orient, &objp->pos);
-
-		if (view().Draw_outline_at_warpin_position 
+		if (view().Draw_outline_at_warpin_position
 			&& (Ships[z].arrival_cue != Locked_sexp_true || Ships[z].arrival_delay > 0)
 			&& Ships[z].arrival_cue != Locked_sexp_false
 			&& !Ships[z].flags[Ship::Ship_Flags::No_arrival_warp])
@@ -951,9 +944,10 @@ void FredRenderer::render_one_model_htl(object* objp,
 				vec3d warpin_pos;
 				vm_vec_scale_add(&warpin_pos, &objp->pos, &objp->orient.vec.fvec, warpin_dist);
 
-				render_info.set_color(65, 65, 65);	// grey; see rgba_defaults
-				render_info.set_flags(flags | MR_SHOW_OUTLINE_HTL | MR_NO_LIGHTING | MR_NO_POLYS | MR_NO_TEXTURING);
-				model_render_immediate(&render_info, Ship_info[Ships[z].ship_info_index].model_num, Ships[z].model_instance_num, &objp->orient, &warpin_pos);
+				model_render_params warpin_info;
+				warpin_info.set_color(65, 65, 65);	// grey; see rgba_defaults
+				warpin_info.set_flags(flags | MR_SHOW_OUTLINE_HTL | MR_NO_LIGHTING | MR_NO_POLYS | MR_NO_TEXTURING);
+				model_render_immediate(&warpin_info, Ship_info[Ships[z].ship_info_index].model_num, Ships[z].model_instance_num, &objp->orient, &warpin_pos);
 			}
 		}
 	} else {
@@ -1146,10 +1140,8 @@ void FredRenderer::render_frame(int cur_object_index,
 		g3_draw_horizon_line();
 	}
 
-	if (view().Show_asteroid_field) {
-		gr_set_color(192, 96, 16);
-		draw_asteroid_field();
-	}
+	gr_set_color(192, 96, 16);
+	draw_asteroid_field();
 
 	if (view().Show_grid) {
 		render_grid(_viewport->The_grid);
