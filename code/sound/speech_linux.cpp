@@ -81,9 +81,8 @@ static bool ensure_speechd_lib()
 	p_spd_set_rate				= (pfn_spd_set_rate)				dlsym(lib_handle, "spd_set_rate");
     p_free_spd_voices 			= (pfn_free_spd_voices)				dlsym(lib_handle, "free_spd_voices");
 
-    if (!p_spd_open || !p_spd_close || !p_spd_say || !p_spd_pause || !p_spd_resume || !p_spd_stop ||
-		!p_spd_set_volume || !p_spd_set_rate || !p_spd_set_synthesis_voice || 
-		!p_spd_list_synthesis_voices || !p_free_spd_voices || !p_spd_set_rate) {
+    if (!p_spd_open || !p_spd_close || !p_spd_say || !p_spd_pause || !p_spd_resume || !p_spd_stop || !p_spd_set_volume 
+		|| !p_spd_set_rate || !p_spd_set_synthesis_voice || !p_spd_list_synthesis_voices || !p_free_spd_voices) {
         mprintf(("Speech: Unable to load one or more symbols from libspeechd.so: %s\n", dlerror()));
         dlclose(lib_handle);
         lib_handle = nullptr;
@@ -214,7 +213,7 @@ bool speech_set_rate(float rate_percent)
 	}
 
 	// 50 / +150 -> 100 = normal -> range -100 / +100
-	signed int rate = static_cast<signed int>((rate_percent - 100.0f) * 2.0f);
+	auto rate = static_cast<signed int>((rate_percent - 100.0f) * 2.0f);
 	if (rate < -100)
 		rate = -100;
 	if (rate > 100)
