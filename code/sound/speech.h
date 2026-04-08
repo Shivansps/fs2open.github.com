@@ -22,6 +22,7 @@ bool speech_stop();
 
 bool speech_set_volume(unsigned short volume);
 bool speech_set_voice(int voice);
+bool speech_set_rate(float rate);
 
 bool speech_is_speaking();
 
@@ -37,6 +38,7 @@ inline bool speech_resume() { return false; }
 inline bool speech_stop() { return false; }
 inline bool speech_set_volume(unsigned short /*volume*/) { return false; }
 inline bool speech_set_voice(int /*voice*/) { return false; }
+inline bool speech_set_rate(float /*rate*/) { return false; } 
 inline bool speech_is_speaking() { return false; }
 
 inline SCP_vector<SCP_string> speech_enumerate_voices() {

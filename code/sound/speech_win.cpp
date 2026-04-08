@@ -173,6 +173,22 @@ bool speech_set_voice(int voice)
 	return false;
 }
 
+bool speech_set_rate(float rate_percent)
+{
+	if (!Speech_init) {
+		return false;
+	}
+
+	// 50 / +150 -> 100 = normal -> range -10 / +10 
+    long rate = static_cast<long>((rate_percent - 100.0f) * 0.1f);
+	if (rate < -10)
+		rate = -10;
+	if (rate > 10)
+		rate = 10;
+
+	return SUCCEEDED(Voice_device->SetRate(rate));
+}
+
 // Goober5000
 bool speech_is_speaking()
 {

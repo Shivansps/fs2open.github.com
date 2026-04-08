@@ -38,6 +38,7 @@ typedef int (*pfn_spd_resume)(SPDConnection*);
 typedef int (*pfn_spd_stop)(SPDConnection*);
 typedef int (*pfn_spd_set_volume)(SPDConnection*, signed int);
 typedef int (*pfn_spd_set_synthesis_voice)(SPDConnection*, const char*);
+typedef int (*pfn_spd_set_rate)(SPDConnection*, signed int);
 typedef SPDVoice** (*pfn_spd_list_synthesis_voices)(SPDConnection*);
 typedef void (*pfn_free_spd_voices)(SPDVoice**);
 
@@ -50,6 +51,7 @@ static pfn_spd_stop                 	p_spd_stop = nullptr;
 static pfn_spd_set_volume           	p_spd_set_volume = nullptr;
 static pfn_spd_set_synthesis_voice  	p_spd_set_synthesis_voice = nullptr;
 static pfn_spd_list_synthesis_voices	p_spd_list_synthesis_voices = nullptr;
+static pfn_spd_set_rate					p_spd_set_rate = nullptr;
 static pfn_free_spd_voices 				p_free_spd_voices = nullptr;
 
 // Load speech-dispatcher with dlopen and load symbols
@@ -76,11 +78,12 @@ static bool ensure_speechd_lib()
     p_spd_set_volume          	= (pfn_spd_set_volume)         		dlsym(lib_handle, "spd_set_volume");
     p_spd_set_synthesis_voice 	= (pfn_spd_set_synthesis_voice)		dlsym(lib_handle, "spd_set_synthesis_voice");
     p_spd_list_synthesis_voices = (pfn_spd_list_synthesis_voices)	dlsym(lib_handle, "spd_list_synthesis_voices");
+	p_spd_set_rate				= (pfn_spd_set_rate)				dlsym(lib_handle, "spd_set_rate");
     p_free_spd_voices 			= (pfn_free_spd_voices)				dlsym(lib_handle, "free_spd_voices");
 
-    if (!p_spd_open || !p_spd_close || !p_spd_say || !p_spd_pause ||
-        !p_spd_resume || !p_spd_stop || !p_spd_set_volume ||
-        !p_spd_set_synthesis_voice || !p_spd_list_synthesis_voices || !p_free_spd_voices) {
+    if (!p_spd_open || !p_spd_close || !p_spd_say || !p_spd_pause || !p_spd_resume || !p_spd_stop ||
+		!p_spd_set_volume || !p_spd_set_rate || !p_spd_set_synthesis_voice || 
+		!p_spd_list_synthesis_voices || !p_free_spd_voices || !p_spd_set_rate) {
         mprintf(("Speech: Unable to load one or more symbols from libspeechd.so: %s\n", dlerror()));
         dlclose(lib_handle);
         lib_handle = nullptr;
@@ -201,6 +204,23 @@ bool speech_set_voice(int voice)
     
 	p_spd_set_synthesis_voice(spd, cached_voices[voice].c_str());
 	
+	return true;
+}
+
+bool speech_set_rate(float rate_percent)
+{
+	if (!Speech_init) {
+		return false;
+	}
+
+	// 50 / +150 -> 100 = normal -> range -100 / +100
+	signed int rate = static_cast<signed int>((rate_percent - 100.0f) * 2.0f);
+	if (rate < -100)
+		rate = -100;
+	if (rate > 100)
+		rate = 100;
+
+	p_spd_set_rate(spd, rate);
 	return true;
 }
 

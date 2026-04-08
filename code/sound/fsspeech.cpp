@@ -31,6 +31,15 @@ const char *FSSpeech_play_id[FSSPEECH_FROM_MAX] =
 char Speech_buffer[MAX_SPEECH_BUFFER_LEN] = "";
 size_t  Speech_buffer_len;
 
+static bool ttsrate_change(float new_val, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+	speech_set_rate(new_val);
+	return true;
+}
+
 static bool ttsingame_change(bool new_val, bool initial)
 {
 	if (initial) {
@@ -120,7 +129,7 @@ static auto SpeechVoiceOption = options::OptionBuilder<int>("Speech.Voice",
 	.flags({ options::OptionFlags::ForceMultiValueSelection })
 	.default_val(0)
 	.change_listener(ttsvoice_change)
-	.importance(2)
+	.importance(3)
 	.finish();
 
 static auto SpeechVolumeOption = options::OptionBuilder<float>("Speech.Volume",
@@ -130,6 +139,16 @@ static auto SpeechVolumeOption = options::OptionBuilder<float>("Speech.Volume",
 	.range(0.0f, 100.0f)
 	.default_val(100.0f)
 	.change_listener(ttsvolume_change)
+	.importance(2)
+	.finish();
+
+static auto SpeechRateOption = options::OptionBuilder<float>("Speech.Rate",
+	std::pair<const char*, int>{"TTS Rate", -1},
+	std::pair<const char*, int>{"Speed of the TTS voice (100 = normal)", -1})
+	.category(std::make_pair("Audio", 1826))
+	.range(50.0f, 150.0f)
+	.default_val(100.0f)
+	.change_listener(ttsrate_change)
 	.importance(1)
 	.finish();
 
@@ -214,6 +233,7 @@ bool fsspeech_init()
 		speech_enumerate_voices();
 		speech_set_volume((unsigned short)SpeechVolumeOption->getValue());
 		speech_set_voice(SpeechVoiceOption->getValue());
+		speech_set_rate(SpeechRateOption->getValue());
 	}
 	else 
 	{
@@ -228,6 +248,9 @@ bool fsspeech_init()
 
 		int voice = os_config_read_uint(nullptr, "SpeechVoice", 0);
 		speech_set_voice(voice);
+
+		int rate = os_config_read_uint(nullptr, "SpeechRate", 100);
+		speech_set_rate(static_cast<float>(rate));
 	}
 
 	speech_inited = 1;

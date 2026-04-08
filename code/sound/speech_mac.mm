@@ -125,6 +125,22 @@ bool speech_set_voice(int voice)
 	return true;
 }
 
+bool speech_set_rate(float rate_percent)
+{
+    if (!Speech_init) {
+        return false;
+    }
+
+    // 180 wpm = normal
+    float rate = 180.0f * (rate_percent / 100.0f);
+
+    [synth setObject:[NSNumber numberWithFloat:rate]
+            forProperty:NSSpeechRateProperty
+                   error:nil];
+
+    return true;
+}
+
 bool speech_is_speaking()
 {
 	if ( !Speech_init ) {
