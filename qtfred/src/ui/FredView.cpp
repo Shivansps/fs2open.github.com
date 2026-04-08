@@ -3,9 +3,11 @@
 
 #include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QDebug>
 #include <QKeyEvent>
+#include <QProcess>
 #include <QSettings>
 
 #include <project.h>
@@ -61,6 +63,9 @@
 #include "util.h"
 #include "mission/object.h"
 
+// Forward-declare global-scope function before entering any namespace
+SCP_string cmdline_build_string();
+
 namespace {
 
 template<typename T>
@@ -92,6 +97,12 @@ FredView::FredView(QWidget* parent) : QMainWindow(parent), ui(new Ui::FredView()
 
 	connect(ui->actionOpen, &QAction::triggered, this, &FredView::openLoadMissionDialog);
 	connect(ui->actionNew, &QAction::triggered, this, &FredView::newMission);
+
+	// Save Format actions are mutually exclusive
+	auto* saveFormatGroup = new QActionGroup(this);
+	saveFormatGroup->addAction(ui->actionFS2_Open);
+	saveFormatGroup->addAction(ui->actionFS2_Retail);
+	saveFormatGroup->addAction(ui->actionFS2_Compatibility);
 
 	connect(fredApp, &FredApplication::onIdle, this, &FredView::updateUI);
 
@@ -176,6 +187,9 @@ void FredView::setEditor(Editor* editor, EditorViewport* viewport) {
 			&FredView::viewIdle,
 			this,
 			[this]() { ui->actionRestore_Camera_Pos->setEnabled(!IS_VEC_NULL(&_viewport->saved_cam_orient.vec.fvec)); });
+	connect(this, &FredView::viewIdle, this, [this]() { ui->actionRevert->setEnabled(!saveName.isEmpty()); });
+	connect(this, &FredView::viewIdle, this, [this]() { ui->actionUndo->setEnabled(fred->undoAvailable != 0); });
+	connect(this, &FredView::viewIdle, this, [this]() { ui->actionDisable_Undo->setChecked(fred->autosaveDisabled != 0); });
 
 }
 
@@ -231,15 +245,7 @@ void FredView::on_actionSave_As_triggered(bool) {
 
 bool FredView::saveMissionToCurrentPath() {
 	Fred_mission_save save;
-	// TODO FredView save format actions currently don't do anything
-	// will need to wire this up when those are finalized
-	/*if (Mission_save_format == FSO_FORMAT_RETAIL) {
-		save.set_save_format(MissionFormat::RETAIL);
-	} else if (Mission_save_format == FSO_FORMAT_COMPATIBILITY_MODE) {
-		save.set_save_format(MissionFormat::COMPATIBILITY_MODE);
-	} else {
-		save.set_save_format(MissionFormat::STANDARD);
-	}*/
+	save.set_save_format(_missionSaveFormat);
 	save.set_always_save_display_names(_viewport->Always_save_display_names);
 	save.set_view_pos(_viewport->view_pos);
 	save.set_view_orient(_viewport->view_orient);
@@ -256,15 +262,7 @@ bool FredView::saveMissionToCurrentPath() {
 }
 bool FredView::saveMissionAs() {
 	Fred_mission_save save;
-	// TODO FredView save format actions currently don't do anything
-	// will need to wire this up when those are finalized
-	/*if (Mission_save_format == FSO_FORMAT_RETAIL) {
-		save.set_save_format(MissionFormat::RETAIL);
-	} else if (Mission_save_format == FSO_FORMAT_COMPATIBILITY_MODE) {
-		save.set_save_format(MissionFormat::COMPATIBILITY_MODE);
-	} else {
-		save.set_save_format(MissionFormat::STANDARD);
-	}*/
+	save.set_save_format(_missionSaveFormat);
 	save.set_always_save_display_names(_viewport->Always_save_display_names);
 	save.set_view_pos(_viewport->view_pos);
 	save.set_view_orient(_viewport->view_orient);
@@ -344,6 +342,183 @@ void FredView::on_actionSave_As_Template_triggered(bool) {
 	saveAsTemplate();
 }
 
+void FredView::on_actionRevert_triggered(bool) {
+	if (saveName.isEmpty()) {
+		QMessageBox::information(this, tr("Revert"), tr("Mission has not been saved yet."));
+		return;
+	}
+	auto result = QMessageBox::question(this,
+		tr("Revert to Last Save"),
+		tr("Discard all changes and reload from disk?"),
+		QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+	if (result != QMessageBox::Yes)
+		return;
+	// Clear modified flag so loadMissionFile doesn't prompt to save again
+	_missionModified = false;
+	loadMissionFile(saveName);
+}
+
+void FredView::on_actionUndo_triggered(bool) {
+	// Preserve camera state and saveName because autoload() triggers missionLoaded which would overwrite them
+	auto savedViewPos    = _viewport->view_pos;
+	auto savedViewOrient = _viewport->view_orient;
+	auto savedSaveName   = saveName;
+
+	fred->autoload();
+
+	_viewport->view_pos    = savedViewPos;
+	_viewport->view_orient = savedViewOrient;
+	saveName               = savedSaveName;
+}
+
+void FredView::on_actionDisable_Undo_triggered(bool checked) {
+	fred->autosaveDisabled = checked ? 1 : 0;
+}
+
+void FredView::on_actionFS2_Open_triggered(bool) {
+	_missionSaveFormat = MissionFormat::STANDARD;
+}
+
+void FredView::on_actionFS2_Retail_triggered(bool) {
+	_missionSaveFormat = MissionFormat::RETAIL;
+}
+
+void FredView::on_actionFS2_Compatibility_triggered(bool) {
+	_missionSaveFormat = MissionFormat::COMPATIBILITY_MODE;
+}
+
+void FredView::on_actionFS1_Mission_triggered(bool) {
+	if (!maybePromptToSaveMissionChanges(tr("importing an FS1 mission"))) {
+		return;
+	}
+	// Mark as unmodified so loadMissionFile won't prompt again after import
+	_missionModified = false;
+
+	QStringList srcPaths = QFileDialog::getOpenFileNames(this,
+		tr("Select FS1 mission(s) to import"),
+		QString(),
+		tr("FreeSpace Missions (*.fsm)"));
+
+	if (srcPaths.isEmpty())
+		return;
+
+	QString destDir = QFileDialog::getExistingDirectory(this,
+		tr("Select destination folder for converted missions"));
+
+	if (destDir.isEmpty())
+		return;
+
+	QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+
+	int successes = 0;
+	QString lastDestPath;
+	for (const auto& qSrcPath : srcPaths) {
+		SCP_string srcPath = qSrcPath.toStdString();
+		if (!fred->loadMission(srcPath, MPF_IMPORT_FSM | MPF_FAST_RELOAD))
+			continue;
+
+		// Derive output filename: strip directory, replace .fsm with .fs2
+		SCP_string filename = srcPath;
+		auto slash = filename.find_last_of("/\\");
+		if (slash != SCP_string::npos)
+			filename = filename.substr(slash + 1);
+		auto dot = filename.rfind('.');
+		if (dot != SCP_string::npos)
+			filename = filename.substr(0, dot);
+		filename += ".fs2";
+
+		SCP_string destPath = destDir.toStdString();
+		if (!destPath.empty() && destPath.back() != '/' && destPath.back() != '\\')
+			destPath += DIR_SEPARATOR_CHAR;
+		destPath += filename;
+
+		Fred_mission_save fileSave;
+		fileSave.set_save_format(_missionSaveFormat);
+		fileSave.set_always_save_display_names(_viewport->Always_save_display_names);
+		fileSave.set_view_pos(_viewport->view_pos);
+		fileSave.set_view_orient(_viewport->view_orient);
+		fileSave.set_fred_alt_names(Fred_alt_names);
+		fileSave.set_fred_callsigns(Fred_callsigns);
+
+		if (fileSave.save_mission_file(destPath.c_str()) == 0) {
+			++successes;
+			lastDestPath = QString::fromStdString(destPath);
+		}
+	}
+
+	QApplication::restoreOverrideCursor();
+
+	int numFiles = srcPaths.size();
+
+	if (numFiles > 1) {
+		fred->createNewMission();
+		QMessageBox::information(this, tr("Import Complete"),
+			tr("Imported %1 of %2 mission(s). Check the destination folder to verify results.")
+				.arg(successes).arg(numFiles));
+	} else if (numFiles == 1) {
+		if (successes == 1) {
+			loadMissionFile(lastDestPath.replace('/', DIR_SEPARATOR_CHAR));
+		} else {
+			QMessageBox::warning(this, tr("Import Failed"), tr("Could not import the selected mission."));
+		}
+	}
+}
+
+void FredView::on_actionRun_FreeSpace_2_Open_triggered(bool) {
+	if (!saveMissionToCurrentPath())
+		return;
+
+	// Try to find the FSO executable next to this one by replacing the editor name
+	QFileInfo appInfo(QCoreApplication::applicationFilePath());
+	QString dir = appInfo.absolutePath();
+
+	QStringList candidates;
+
+	// Derive a candidate by replacing editor name with fs2_open
+	QString derived = appInfo.completeBaseName();
+	QString derivedLower = derived.toLower();
+	for (const QString& editorName : {QString("qtfred"), QString("fred2_open")}) {
+		int idx = derivedLower.indexOf(editorName);
+		if (idx != -1) {
+			QString candidate = derived;
+			candidate.replace(idx, editorName.length(), derived[idx].isUpper() ? "FS2_Open" : "fs2_open");
+			candidates << dir + "/" + candidate;
+			break;
+		}
+	}
+
+	// Platform-aware fallback names
+#ifdef WIN32
+	candidates << dir + "/fs2_open.exe"
+	           << dir + "/fs2_open_r.exe";
+#else
+	candidates << dir + "/fs2_open"
+	           << dir + "/fs2_open_r";
+#endif
+
+	QString exePath;
+	for (const auto& candidate : candidates) {
+		if (QFileInfo::exists(candidate)) {
+			exePath = candidate;
+			break;
+		}
+	}
+
+	if (exePath.isEmpty()) {
+		QMessageBox::warning(this, tr("Run FreeSpace"),
+			tr("Could not find the FreeSpace 2 Open executable next to this editor.\n"
+			   "Ensure fs2_open is in the same directory as qtfred."));
+		return;
+	}
+
+	QString args = QString::fromStdString(cmdline_build_string());
+
+	if (!QProcess::startDetached(exePath, args.split(' ', QString::SkipEmptyParts))) {
+		QMessageBox::warning(this, tr("Run FreeSpace"),
+			tr("Failed to launch: %1").arg(exePath));
+	}
+}
+
 void FredView::on_mission_loaded(const std::string& filepath) {
 	// Clear browsed head ANIs so the new mission's message scan starts fresh.
 	fso::fred::dialogs::MissionEventsDialogModel::clearBrowsedHeadAnis();
@@ -365,7 +540,14 @@ void FredView::on_mission_loaded(const std::string& filepath) {
 	setWindowFilePath(QString::fromStdString(filepath));
 
 	if (!filepath.empty()) {
-		addToRecentFiles(QString::fromStdString(filepath));
+		auto qpath = QString::fromStdString(filepath);
+		// Templates are loaded to edit, not saved back to their original path
+		if (!qpath.endsWith(".fst", Qt::CaseInsensitive)) {
+			saveName = qpath;
+		}
+		addToRecentFiles(qpath);
+	} else {
+		saveName = QString();
 	}
 
 	_missionModified = false;
@@ -384,6 +566,10 @@ void FredView::newMission() {
 void FredView::addToRecentFiles(const QString& path) {
 	// Templates are not mission files; don't pollute the recent list with them
 	if (path.endsWith(".fst", Qt::CaseInsensitive))
+		return;
+
+	// Backup files are internal; don't pollute the recent list with them
+	if (QFileInfo(path).baseName().compare("Backup", Qt::CaseInsensitive) == 0)
 		return;
 
 	// First get the list of existing files
@@ -438,20 +624,10 @@ void FredView::recentFileOpened() {
 	loadMissionFile(path);
 }
 void FredView::syncViewOptions() {
-	connectActionToViewSetting(ui->actionShow_Ships, &_viewport->view.Show_ships);
-	connectActionToViewSetting(ui->actionShow_Player_Starts, &_viewport->view.Show_starts);
-	connectActionToViewSetting(ui->actionShow_Waypoints, &_viewport->view.Show_waypoints);
-
-	// The Show teams actions need to be initialized after everything has been set up since the IFFs may not have been
-	// initialized yet
+	// Initialize the Show_iff visibility vector after IFF data is loaded
 	fredApp->runAfterInit([this]() {
 		for (auto i = 0; i < (int)Iff_info.size(); ++i) {
 			_viewport->view.Show_iff.push_back(true);
-			auto action = new QAction(QString::fromUtf8(Iff_info[i].iff_name), ui->menuDisplay_Filter);
-			action->setCheckable(true);
-			connectActionToViewSetting(action, &_viewport->view.Show_iff, i);
-
-			ui->menuDisplay_Filter->addAction(action);
 		}
 	});
 
@@ -465,19 +641,20 @@ void FredView::syncViewOptions() {
 	connectActionToViewSetting(ui->actionShow_Distances, &_viewport->view.Show_distances);
 	connectActionToViewSetting(ui->actionShow_Model_Paths, &_viewport->view.Show_paths_fred);
 	connectActionToViewSetting(ui->actionShow_Model_Dock_Points, &_viewport->view.Show_dock_points);
+	connectActionToViewSetting(ui->actionShow_Bay_Paths, &_viewport->view.Show_bay_paths);
 	connectActionToViewSetting(ui->actionHighlight_Selectable_Subsystems, &_viewport->view.Highlight_selectable_subsys);
 
 	connectActionToViewSetting(ui->actionShow_Grid, &_viewport->view.Show_grid);
 	connectActionToViewSetting(ui->actionShow_Horizon, &_viewport->view.Show_horizon);
-	connectActionToViewSetting(ui->actionDouble_Fine_Gridlines, &double_fine_gridlines);
-	connectActionToViewSetting(ui->actionAnti_Aliased_Gridlines, &_viewport->view.Aa_gridlines);
 	connectActionToViewSetting(ui->actionShow_3D_Compass, &_viewport->view.Show_compass);
 	connectActionToViewSetting(ui->actionShow_Background, &_viewport->view.Show_stars);
 
 	connectActionToViewSetting(ui->actionLighting_from_Suns, &_viewport->view.Lighting_on);
-
+	connectActionToViewSetting(ui->actionRender_Full_Detail, &_viewport->view.FullDetail);
 
 	connectActionToViewSetting(ui->actionShowDistances, &_viewport->view.Show_distances);
+
+	connect(ui->actionVisibility_Layers, &QAction::triggered, this, [this]() { openLayerManagerDialog(); });
 }
 void FredView::initializeStatusBar() {
 	_statusBarViewmode = new QLabel();
@@ -803,6 +980,14 @@ bool FredView::event(QEvent* event) {
 		return QMainWindow::event(event);
 	}
 }
+void FredView::changeEvent(QEvent* event) {
+	QMainWindow::changeEvent(event);
+	// Force menubar repaint when reenabled after a modal dialog closes.
+	// Without this, menu items stay grey until the user mouses over them.
+	if (event->type() == QEvent::EnabledChange && isEnabled()) {
+		menuBar()->update();
+	}
+}
 void FredView::closeEvent(QCloseEvent* event) {
 	if (!maybePromptToSaveMissionChanges(tr("closing QtFRED"))) {
 		event->ignore();
@@ -817,16 +1002,11 @@ void FredView::windowActivated() {
 	// Track the last active viewport
 	fred->setActiveViewport(_viewport);
 
+	menuBar()->update();
 	viewWindowActivated();
 }
 void FredView::windowDeactivated() {
 	_viewport->Cursor_over = -1;
-}
-void FredView::on_actionHide_Marked_Objects_triggered(bool  /*enabled*/) {
-	fred->hideMarkedObjects();
-}
-void FredView::on_actionShow_All_Hidden_Objects_triggered(bool  /*enabled*/) {
-	fred->showHiddenObjects();
 }
 void FredView::on_actionLock_Marked_Objects_triggered(bool  /*enabled*/) {
 	fred->lockMarkedObjects();
@@ -1240,6 +1420,34 @@ void FredView::orientEditorTriggered() {
 }
 void FredView::onUpdateEditorActions() {
 	ui->actionObjects->setEnabled(query_valid_object(fred->currentObject));
+
+	const bool validObject = query_valid_object(fred->currentObject);
+	const bool hasMarked = fred->getNumMarked() > 0;
+	const bool isShip = validObject && Objects[fred->currentObject].type == OBJ_SHIP;
+	const bool subsysActive = fred->Render_subsys.do_render;
+
+	ui->actionClone_Marked_Objects->setEnabled(hasMarked);
+	ui->actionDelete->setEnabled(hasMarked);
+	ui->actionLock_Marked_Objects->setEnabled(hasMarked);
+	ui->actionDelete_Wing->setEnabled(fred->cur_wing >= 0);
+
+	// Objects editor — requires a selected object
+	ui->actionObjects->setEnabled(validObject);
+
+	// Level/Align — require something to be selected
+	ui->actionLevel_Object->setEnabled(validObject);
+	ui->actionAlign_Object->setEnabled(validObject);
+
+	// Mark Wing — only valid when the current object belongs to a wing
+	ui->actionMark_Wing->setEnabled(fred->cur_wing != -1);
+
+	// Subsystem navigation — Next requires a ship selected, Prev/Cancel require an active subsystem
+	ui->actionNext_Subsystem->setEnabled(isShip);
+	ui->actionPrev_Subsystem->setEnabled(subsysActive);
+	ui->actionCancel_Subsystem->setEnabled(subsysActive);
+
+	// Set Group submenu — requires at least one marked object to assign
+	ui->menuSet_Group->setEnabled(hasMarked);
 }
 void FredView::on_actionWingForm_triggered(bool  /*enabled*/) {
 	object* ptr = GET_FIRST(&obj_used_list);
@@ -1277,12 +1485,13 @@ void FredView::on_actionWingForm_triggered(bool  /*enabled*/) {
 	}
 
 	if (fred->create_wing()) {
-		// TODO: Autosave
+		fred->autosave("form wing");
 	}
 }
 void FredView::on_actionWingDisband_triggered(bool  /*enabled*/) {
 	if (fred->query_single_wing_marked()) {
 		fred->remove_wing(fred->cur_wing);
+		fred->autosave("wing disband");
 	} else {
 		showButtonDialog(DialogType::Error,
 						 "Error",
@@ -1383,25 +1592,22 @@ void FredView::on_actionRestore_Camera_Pos_triggered(bool) {
 
 	_viewport->needsUpdate();
 }
-void FredView::on_actionTool_Bar_triggered(bool enabled) {
-	ui->toolBar->setVisible(enabled);
-}
-void FredView::on_actionStatus_Bar_triggered(bool enabled) {
-	statusBar()->setVisible(enabled);
-}
 void FredView::on_actionClone_Marked_Objects_triggered(bool) {
 	if (fred->getNumMarked() > 0) {
 		_viewport->duplicate_marked_objects();
+		fred->autosave("clone marked");
 	}
 }
 void FredView::on_actionDelete_triggered(bool) {
 	if (fred->getNumMarked() > 0) {
 		fred->delete_marked();
+		fred->autosave("object delete");
 	}
 }
 void FredView::on_actionDelete_Wing_triggered(bool) {
 	if (fred->cur_wing >= 0) {
 		fred->delete_wing(fred->cur_wing, 0);
+		fred->autosave("wing delete");
 	}
 }
 void FredView::initializeGroupActions() {
@@ -1485,6 +1691,17 @@ void FredView::on_actionPrev_Subsystem_triggered(bool) {
 }
 void FredView::on_actionCancel_Subsystem_triggered(bool) {
 	fred->cancel_select_subsystem();
+}
+void FredView::on_actionNext_Object_triggered(bool) {
+	fred->select_next_object();
+}
+void FredView::on_actionPrev_Object_triggered(bool) {
+	fred->select_previous_object();
+}
+void FredView::on_actionMark_Wing_triggered(bool) {
+	if (fred->cur_wing != -1) {
+		fred->mark_wing(fred->cur_wing);
+	}
 }
 void FredView::on_actionError_Checker_triggered(bool) {
 	fred->global_error_check();
