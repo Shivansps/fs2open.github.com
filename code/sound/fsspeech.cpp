@@ -120,8 +120,8 @@ static bool ttsvoice_change(int id, bool initial)
 }
 
 static auto SpeechVoiceOption = options::OptionBuilder<int>("Speech.Voice",
-	std::pair<const char*, int>{"TTS Voice", -1},
-	std::pair<const char*, int>{"The voice used to read text", -1})
+	std::pair<const char*, int>{"TTS Voice", 1915},
+	std::pair<const char*, int>{"The voice used to read text", 1916})
 	.category(std::make_pair("Audio", 1826))
 	.level(options::ExpertLevel::Beginner)
 	.enumerator(ttsvoice_enumerator)
@@ -133,8 +133,8 @@ static auto SpeechVoiceOption = options::OptionBuilder<int>("Speech.Voice",
 	.finish();
 
 static auto SpeechVolumeOption = options::OptionBuilder<float>("Speech.Volume",
-	std::pair<const char*, int>{"TTS Volume", -1},
-	std::pair<const char*, int>{"Volume used for playing TTS speech", -1})
+	std::pair<const char*, int>{"TTS Volume", 1917},
+	std::pair<const char*, int>{"Volume used for playing TTS speech", 1918})
 	.category(std::make_pair("Audio", 1826))
 	.range(0.0f, 100.0f)
 	.default_val(100.0f)
@@ -143,8 +143,8 @@ static auto SpeechVolumeOption = options::OptionBuilder<float>("Speech.Volume",
 	.finish();
 
 static auto SpeechRateOption = options::OptionBuilder<float>("Speech.Rate",
-	std::pair<const char*, int>{"TTS Rate", -1},
-	std::pair<const char*, int>{"Speed of the TTS voice (100 = normal)", -1})
+	std::pair<const char*, int>{"TTS Rate", 1919},
+	std::pair<const char*, int>{"Speed of the TTS voice (100 = normal)", 1920})
 	.category(std::make_pair("Audio", 1826))
 	.range(50.0f, 150.0f)
 	.default_val(100.0f)
@@ -153,8 +153,8 @@ static auto SpeechRateOption = options::OptionBuilder<float>("Speech.Rate",
 	.finish();
 
 static auto SpeechBriefingOption = options::OptionBuilder<bool>("Speech.Briefing",
-	std::pair<const char*, int>{"TTS in briefings", -1},
-	std::pair<const char*, int>{"Enable or disable TTS in briefings", -1})
+	std::pair<const char*, int>{"TTS in briefings", 1921},
+	std::pair<const char*, int>{"Enable or disable TTS in briefings", 1922})
 	.category(std::make_pair("Audio", 1826))
 	.level(options::ExpertLevel::Beginner)
 	.change_listener(ttsbriefing_change)
@@ -163,8 +163,8 @@ static auto SpeechBriefingOption = options::OptionBuilder<bool>("Speech.Briefing
 	.finish();
 
 static auto SpeechTechroomOption = options::OptionBuilder<bool>("Speech.Techroom",
-	std::pair<const char*, int>{"TTS in techroom", -1},
-	std::pair<const char*, int>{"Enable or disable TTS in techroom", -1})
+	std::pair<const char*, int>{"TTS in techroom", 1923},
+	std::pair<const char*, int>{"Enable or disable TTS in techroom", 1924})
 	.category(std::make_pair("Audio", 1826))
 	.level(options::ExpertLevel::Beginner)
 	.change_listener(ttstechroom_change)
@@ -173,8 +173,8 @@ static auto SpeechTechroomOption = options::OptionBuilder<bool>("Speech.Techroom
 	.finish();
 
 static auto SpeechIngameOption = options::OptionBuilder<bool>("Speech.Ingame",
-	std::pair<const char*, int>{"TTS in-game", -1},
-	std::pair<const char*, int>{"Enable or disable TTS in-game", -1})
+	std::pair<const char*, int>{"TTS in-game", 1925},
+	std::pair<const char*, int>{"Enable or disable TTS in-game", 1926})
 	.category(std::make_pair("Audio", 1826))
 	.level(options::ExpertLevel::Beginner)
 	.change_listener(ttsingame_change)
@@ -183,8 +183,8 @@ static auto SpeechIngameOption = options::OptionBuilder<bool>("Speech.Ingame",
 	.finish();
 
 static auto SpeechMultiOption = options::OptionBuilder<bool>("Speech.Multi",
-	std::pair<const char*, int>{"TTS in multiplayer", -1},
-	std::pair<const char*, int>{"Enable or disable TTS in multiplayer", -1})
+	std::pair<const char*, int>{"TTS in multiplayer", 1927},
+	std::pair<const char*, int>{"Enable or disable TTS in multiplayer", 1928})
 	.category(std::make_pair("Audio", 1826))
 	.level(options::ExpertLevel::Beginner)
 	.change_listener(ttsmulti_change)
