@@ -244,12 +244,16 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 		return fsoVoices;
 	}
 
-	if (!Speech_init || !spd) {
-		mprintf(("Speech: Speech system is not initialized.\n"));
-		return fsoVoices;
+	SPDConnection* connection = spd;
+	if (!Speech_init) {
+		connection = p_spd_open("freespace_open", "main", nullptr, SPD_MODE_SINGLE);
+		if (!connection) {
+			mprintf(("Speech: Unable to connect to speech-dispatcher\n"));
+			return fsoVoices;
+		}
 	}
 
-	SPDVoice** voices = p_spd_list_synthesis_voices(spd);
+	SPDVoice** voices = p_spd_list_synthesis_voices(connection);
 
 	if (voices)
 	{
@@ -273,6 +277,9 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 	{
 		mprintf(("Speech: Unable to get voice list from speech-dispatcher.\n"));
 	}
+
+	if (!Speech_init) {
+		p_spd_close(connection);
 
 	voices_cached = true;
 	cached_voices = fsoVoices;
