@@ -74,7 +74,11 @@ IF(RESET_INSTALL_PREFIX)
 	ENDIF(NOT $ENV{FS2PATH} STREQUAL "")
 ENDIF(RESET_INSTALL_PREFIX)
 
-OPTION(FSO_USE_SPEECH "Use text-to-speach libraries" ON)
+IF(WIN32 OR APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	OPTION(FSO_USE_SPEECH "Use text-to-speach libraries" ON)
+ELSE()
+	OPTION(FSO_USE_SPEECH "Use text-to-speach libraries" OFF)
+ENDIF()
 
 IF (WIN32)
 	OPTION(FSO_USE_VOICEREC "Enable voice recognition support" ON)

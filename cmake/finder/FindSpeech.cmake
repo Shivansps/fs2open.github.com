@@ -11,7 +11,7 @@ if (WIN32)
 	endif()
 elseif(APPLE)
 	# it should just work
-elseif(UNIX)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	# uses speech-dispatcher with dlopen
 else()
 	message(SEND_ERROR "Text to Speech is not supported on this platform!")

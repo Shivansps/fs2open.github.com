@@ -214,10 +214,7 @@ bool speech_set_rate(float rate_percent)
 
 	// 50 / +150 -> 100 = normal -> range -100 / +100
 	auto rate = static_cast<signed int>(rate_percent - 100.0f);
-	if (rate < -100)
-		rate = -100;
-	if (rate > 100)
-		rate = 100;
+	CAP(rate, -100, 100);
 
 	p_spd_set_voice_rate(spd, rate);
 	return true;
@@ -235,36 +232,39 @@ bool speech_is_speaking()
 SCP_vector<SCP_string> speech_enumerate_voices()
 {
 	SCP_vector<SCP_string> fsoVoices;
-	
-	if (!ensure_speechd_lib()) {
-        return fsoVoices;
-    }
 
-    SPDConnection* connection = spd;
-    if ( !Speech_init ) {
-    	connection = p_spd_open("fso_voice_list", "client", nullptr, SPD_MODE_SINGLE);
-    	if (!connection) {
-        	mprintf(("Speech: Unable to connect to speech-dispatcher\n"));
-        	return fsoVoices;
-    	}
+	if (!ensure_speechd_lib()) {
+		return fsoVoices;
 	}
 
-    SPDVoice** voices = p_spd_list_synthesis_voices(connection);
-    
-    for (int i = 0; voices[i] != nullptr; i++) {
-    	SCP_string lang = voices[i]->language;
-    	// There are too many we cant add them all
-    	// Only add English voices
-    	if(lang.find("en") == 0) {
-    		SCP_string voiceName;
-    		voiceName = voices[i]->name ? voices[i]->name : "unknown";
-        	fsoVoices.push_back(voiceName);
-        }
-    }
+	if (!Speech_init || !spd) {
+		mprintf(("Speech: Speech system is not initialized.\n"));
+		return fsoVoices;
+	}
 
-    p_free_spd_voices(voices);
-    if ( !Speech_init ) {
-    	p_spd_close(connection);
+	SPDVoice** voices = p_spd_list_synthesis_voices(spd);
+
+	if (voices)
+	{
+		int num_voices = 0;
+		//Count voices
+		while (voices[num_voices] != nullptr) {
+			num_voices++;
+		}
+
+		for (int i = 0; voices[i] != nullptr; i++) {
+			// There are too many we cant add them all
+			// Only add English voices
+			if (num_voices < 600 || (voices[i]->language && strncmp(voices[i]->language, "en", 2) == 0)) {
+				SCP_string voiceName = voices[i]->name ? voices[i]->name : "unknown";
+				fsoVoices.push_back(voiceName);
+			}
+		}
+		p_free_spd_voices(voices);
+	}
+	else
+	{
+		mprintf(("Speech: Unable to get voice list from speech-dispatcher.\n"));
 	}
 
 	return fsoVoices;
