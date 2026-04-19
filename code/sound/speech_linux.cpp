@@ -93,7 +93,8 @@ static bool ensure_speechd_lib()
 }
 
 // Speech handling starts here
-
+static SCP_vector<SCP_string> cached_voices;
+static bool voices_cached = false;
 static bool Speech_init = false;
 static SPDConnection* spd = nullptr;
 
@@ -129,6 +130,8 @@ void speech_deinit()
 		dlclose(lib_handle); 
 		lib_handle = nullptr; 
 	}
+	voices_cached = false;
+	cached_voices.clear();
 }
 
 bool speech_play(const SCP_string& text)
@@ -231,6 +234,10 @@ bool speech_is_speaking()
 
 SCP_vector<SCP_string> speech_enumerate_voices()
 {
+	if (voices_cached) {
+		return cached_voices;
+	}
+
 	SCP_vector<SCP_string> fsoVoices;
 
 	if (!ensure_speechd_lib()) {
@@ -255,7 +262,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 		for (int i = 0; voices[i] != nullptr; i++) {
 			// There are too many we cant add them all
 			// Only add English voices
-			if (num_voices < 600 || (voices[i]->language && strncmp(voices[i]->language, "en", 2) == 0)) {
+			if (num_voices < 600 || (voices[i]->language && strstr(voices[i]->language, "en") != nullptr)) {
 				SCP_string voiceName = voices[i]->name ? voices[i]->name : "unknown";
 				fsoVoices.push_back(voiceName);
 			}
@@ -267,6 +274,8 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 		mprintf(("Speech: Unable to get voice list from speech-dispatcher.\n"));
 	}
 
+	voices_cached = true;
+	cached_voices = fsoVoices;
 	return fsoVoices;
 }
 
