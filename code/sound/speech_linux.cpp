@@ -280,6 +280,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 
 	if (!Speech_init) {
 		p_spd_close(connection);
+	}
 
 	voices_cached = true;
 	cached_voices = fsoVoices;
