@@ -9,7 +9,7 @@
 
 static NSSpeechSynthesizer *synth = nil;
 static bool Speech_init = false;
-
+static int voice_default_rate = 200;
 
 bool speech_init()
 {
@@ -120,6 +120,13 @@ bool speech_set_voice(int voice)
 
 	[synth setVoice: [voices objectAtIndex:voice]];
 
+	// reset voice to defaults
+	[synth setObject:nil forProperty:NSSpeechResetProperty error:nil];
+
+	// get default rate for voice
+	NSNumber *voiceRate = [synth objectForProperty:NSSpeechRateProperty error:nil];
+	voice_default_rate = voiceRate ? [voiceRate intValue] : 200; // median normal rate as default
+
 	return true;
 }
 
@@ -129,12 +136,14 @@ bool speech_set_rate(float rate_percent)
         return false;
     }
 
-    // 180 wpm = normal
-    float rate = 180.0f * (rate_percent / 100.0f);
+	CAP(rate_percent, 25.0f, 300.f);
 
-    [synth setObject:[NSNumber numberWithFloat:rate]
-            forProperty:NSSpeechRateProperty
-                   error:nil];
+	int rate = fl2i(voice_default_rate * (rate_percent / 100.0f));
+
+	[synth
+		setObject:[NSNumber numberWithInt:rate]
+		forProperty:NSSpeechRateProperty error:nil
+	];
 
     return true;
 }
