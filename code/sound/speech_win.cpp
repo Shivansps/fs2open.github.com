@@ -52,8 +52,6 @@ ISpVoice *Voice_device;
 #include "utils/unicode.h"
 #include "speech.h"
 
-static SCP_vector<SCP_string> cached_voices;
-static bool voices_cached = false;
 bool Speech_init = false;
 
 bool speech_init()
@@ -134,7 +132,8 @@ bool speech_set_volume(unsigned short volume)
 
 bool speech_set_voice(int voice)
 {
-	if (voice < 0 || static_cast<size_t>(voice) >= cached_voices.size()) {
+	auto voices = speech_enumerate_voices();
+	if (voice < 0 || static_cast<size_t>(voice) >= voices.size()) {
         return false;
     }
 	
@@ -203,79 +202,66 @@ bool speech_is_speaking()
 
 SCP_vector<SCP_string> speech_enumerate_voices()
 {
-	if (voices_cached) {
-		return cached_voices;
-	}
+	SCP_vector<SCP_string> voices;
 
-	HRESULT hr = CoCreateInstance(
-		CLSID_SpVoice,
-		nullptr,
-		CLSCTX_ALL,
-		IID_ISpVoice,
-		(void **)&Voice_device);
-
-	if (FAILED(hr)) {
-		return SCP_vector<SCP_string>();
-	}
-
-	// This code is mostly copied from wxLauncher
-	ISpObjectTokenCategory * comTokenCategory = nullptr;
-	IEnumSpObjectTokens * comVoices = nullptr;
+	ISpObjectTokenCategory* comTokenCategory = nullptr;
+	IEnumSpObjectTokens* comVoices = nullptr;
 	ULONG comVoicesCount = 0;
 
-	// Generate enumeration of voices
-	hr = ::CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr,
+	HRESULT hr = ::CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr,
 		CLSCTX_INPROC_SERVER, IID_ISpObjectTokenCategory, (LPVOID*)&comTokenCategory);
+
 	if (FAILED(hr)) {
-		return SCP_vector<SCP_string>();
+		return voices;
 	}
 
 	hr = comTokenCategory->SetId(SPCAT_VOICES, false);
 	if (FAILED(hr)) {
-		return SCP_vector<SCP_string>();
+		comTokenCategory->Release();
+		return voices;
 	}
 
 	hr = comTokenCategory->EnumTokens(nullptr, nullptr, &comVoices);
 	if (FAILED(hr)) {
-		return SCP_vector<SCP_string>();
+		comTokenCategory->Release();
+		return voices;
 	}
 
 	hr = comVoices->GetCount(&comVoicesCount);
 	if (FAILED(hr)) {
-		return SCP_vector<SCP_string>();
+		comVoices->Release();
+		comTokenCategory->Release();
+		return voices;
 	}
 
-	SCP_vector<SCP_string> voices;
 	while (comVoicesCount > 0) {
-		ISpObjectToken * comAVoice = nullptr;
+		ISpObjectToken* comAVoice = nullptr;
 
-		comVoices->Next(1, &comAVoice, nullptr); // retrieve just one
+		comVoices->Next(1, &comAVoice, nullptr);
 
 		LPWSTR id = nullptr;
 		comAVoice->GetStringValue(nullptr, &id);
 
-		auto idlength = wcslen(id);
-		auto buffer_size = WideCharToMultiByte(CP_UTF8, 0, id, (int)idlength, nullptr, 0, nullptr, nullptr);
+		if (id) {
+			auto idlength = wcslen(id);
+			int buffer_size = WideCharToMultiByte(CP_UTF8, 0, id, (int)idlength, nullptr, 0, nullptr, nullptr);
 
-		if (buffer_size > 0) {
-			SCP_string voiceName;
-			voiceName.resize(buffer_size);
-			buffer_size = WideCharToMultiByte(CP_UTF8, 0, id, (int)idlength, &voiceName[0], buffer_size, nullptr, nullptr);
-
-			voices.push_back(voiceName);
+			if (buffer_size > 0) {
+				SCP_string voiceName;
+				voiceName.resize(buffer_size);
+				WideCharToMultiByte(CP_UTF8, 0, id, (int)idlength, &voiceName[0], buffer_size, nullptr, nullptr);
+				voices.push_back(voiceName);
+			}
+			CoTaskMemFree(id);
 		}
 
-		CoTaskMemFree(id);
 		comAVoice->Release();
 		comVoicesCount--;
 	}
 
+	comVoices->Release();
 	comTokenCategory->Release();
-	//only release the voice_device when getting flags
-	if (!Speech_init)
-		Voice_device->Release();
-	voices_cached = true;
-	cached_voices = voices;
+
 	return voices;
 }
 

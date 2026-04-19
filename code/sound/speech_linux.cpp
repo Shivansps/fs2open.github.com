@@ -94,8 +94,6 @@ static bool ensure_speechd_lib()
 
 // Speech handling starts here
 
-static SCP_vector<SCP_string> cached_voices;
-static bool voices_cached = false;
 static bool Speech_init = false;
 static SPDConnection* spd = nullptr;
 
@@ -197,11 +195,13 @@ bool speech_set_voice(int voice)
 		return false;
 	}
 	
-	if (voice < 0 || static_cast<size_t>(voice) >= cached_voices.size()) {
+	auto voices = speech_enumerate_voices();
+
+	if (voice < 0 || static_cast<size_t>(voice) >= voices.size()) {
         return false;
     }
     
-	p_spd_set_synthesis_voice(spd, cached_voices[voice].c_str());
+	p_spd_set_synthesis_voice(spd, voices[voice].c_str());
 	
 	return true;
 }
@@ -234,15 +234,9 @@ bool speech_is_speaking()
 
 SCP_vector<SCP_string> speech_enumerate_voices()
 {
-	if (voices_cached) {
-		return cached_voices;
-	}
-
 	SCP_vector<SCP_string> fsoVoices;
 	
 	if (!ensure_speechd_lib()) {
-        voices_cached = true;
-        cached_voices = fsoVoices;
         return fsoVoices;
     }
 
@@ -251,8 +245,6 @@ SCP_vector<SCP_string> speech_enumerate_voices()
     	connection = p_spd_open("fso_voice_list", "client", nullptr, SPD_MODE_SINGLE);
     	if (!connection) {
         	mprintf(("Speech: Unable to connect to speech-dispatcher\n"));
-        	voices_cached = true;
-        	cached_voices = fsoVoices;
         	return fsoVoices;
     	}
 	}
@@ -274,8 +266,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
     if ( !Speech_init ) {
     	p_spd_close(connection);
 	}
-	voices_cached = true;
-	cached_voices = fsoVoices;
+
 	return fsoVoices;
 }
 

@@ -7,8 +7,6 @@
 #include "utils/unicode.h"
 #include "speech.h"
 
-static SCP_vector<SCP_string> cached_voices;
-static bool voices_cached = false;
 static NSSpeechSynthesizer *synth = nil;
 static bool Speech_init = false;
 
@@ -152,10 +150,6 @@ bool speech_is_speaking()
 
 SCP_vector<SCP_string> speech_enumerate_voices()
 {
-	if (voices_cached) {
-		return cached_voices;
-	}
-
 	NSArray *voices = [NSSpeechSynthesizer availableVoices];
 
 	SCP_vector<SCP_string> fsoVoices;
@@ -167,8 +161,6 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 		fsoVoices.push_back([name UTF8String]);
 	}
 
-	voices_cached = true;
-	cached_voices = fsoVoices;
 	return fsoVoices;
 }
 

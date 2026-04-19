@@ -229,8 +229,6 @@ bool fsspeech_init()
 		FSSpeech_play_from[FSSPEECH_FROM_BRIEFING] = SpeechBriefingOption->getValue();
 		FSSpeech_play_from[FSSPEECH_FROM_INGAME] = SpeechIngameOption->getValue();
 		FSSpeech_play_from[FSSPEECH_FROM_MULTI] = SpeechMultiOption->getValue();
-		// Early caching of voices names, needed for sapi not to override initial voice selection
-		speech_enumerate_voices();
 		speech_set_volume((unsigned short)SpeechVolumeOption->getValue());
 		speech_set_voice(SpeechVoiceOption->getValue());
 		speech_set_rate(SpeechRateOption->getValue());
