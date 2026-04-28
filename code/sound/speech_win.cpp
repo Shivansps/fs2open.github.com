@@ -131,12 +131,7 @@ bool speech_set_volume(unsigned short volume)
 }
 
 bool speech_set_voice(int voice)
-{
-	auto voices = speech_enumerate_voices();
-	if (voice < 0 || static_cast<size_t>(voice) >= voices.size()) {
-        return false;
-    }
-	
+{	
 	HRESULT                             hr;
 	CComPtr<ISpObjectToken>             cpVoiceToken;
 	CComPtr<IEnumSpObjectTokens>        cpEnum;
