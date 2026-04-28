@@ -120,12 +120,12 @@ static SCP_vector<std::pair<int, SCP_string>> ttsvoice_enumerator()
 	}
 }
 
-static SCP_string ttsvoice_display(const std::pair<int, SCP_string> vi)
+static SCP_string ttsvoice_display(const std::pair<int, SCP_string>& vi)
 {
 	return vi.second;
 }
 
-static bool ttsvoice_change(const std::pair<int, SCP_string> new_voice, bool initial)
+static bool ttsvoice_change(const std::pair<int, SCP_string>& new_voice, bool initial)
 {
 	if (initial) {
 		return false;
