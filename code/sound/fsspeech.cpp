@@ -12,7 +12,6 @@
 #include "sound/speech.h"
 #include "options/Option.h"
 
-
 extern int Cmdline_freespace_no_sound;
 
 const size_t MAX_SPEECH_BUFFER_LEN = 4096;
@@ -85,49 +84,65 @@ static bool ttsvolume_change(float new_val, bool initial)
 	return true;
 }
 
-static SCP_vector<int> ttsvoice_enumerator()
+static std::pair<int, SCP_string> ttsvoice_deserializer(const json_t* el)
 {
-	SCP_vector<int> vals;
+	int id;
+	char* name = nullptr;
+
+	json_error_t err;
+	if (json_unpack_ex((json_t*)el, &err, 0, "{s:i, s:s}", "id", &id, "name", &name) != 0) {
+		throw json_exception(err);
+	}
+
+	return std::make_pair(id, name);
+}
+
+static json_t* ttsvoice_serializer(const std::pair<int, SCP_string>& value)
+{
+	return json_pack("{s:i, s:s}", "id", value.first, "name", value.second.c_str());
+}
+
+static SCP_vector<std::pair<int, SCP_string>> ttsvoice_enumerator()
+{
+	SCP_vector< std::pair<int, SCP_string>> vals;
 	auto voices = speech_enumerate_voices();
-	for (int i = 0; i < static_cast<int>(voices.size()); ++i) {
-		vals.push_back(i);
+
+	if (voices.empty()) {
+		vals.emplace_back(std::make_pair(0, "No voices loaded"));
+	}
+	else {
+		for (int i = 0; i < static_cast<int>(voices.size()); ++i) {
+			vals.emplace_back(std::make_pair(i, voices[i]));
+		}
 	}
 	return vals;
 }
 
-static SCP_string ttsvoice_display(int id)
+static SCP_string ttsvoice_display(std::pair<int, SCP_string> vi)
 {
-	auto voices = speech_enumerate_voices();
-	if (voices.empty() || id < 0 || static_cast<size_t>(id) >= voices.size()) {
-        return "No voices loaded";
-    }
-    SCP_string out;
-	sprintf(out, "(%d) %s", id + 1, voices[id].c_str());
-	return out;
+	return vi.second;
 }
 
-static bool ttsvoice_change(int id, bool initial)
+static bool ttsvoice_change(std::pair<int, SCP_string> new_voice, bool initial)
 {
 	if (initial) {
 		return false;
 	}
-	auto voices = speech_enumerate_voices();
-	if (voices.empty() || id < 0 || static_cast<size_t>(id) >= voices.size()) {
-        return false;
-    }
-	speech_set_voice(id);
+	speech_set_voice(new_voice.first);
 	return true;
 }
 
-static auto SpeechVoiceOption = options::OptionBuilder<int>("Speech.Voice",
+static auto SpeechVoiceOption = options::OptionBuilder<std::pair<int, SCP_string>>("Speech.Voice",
 	std::pair<const char*, int>{"TTS Voice", 1915},
 	std::pair<const char*, int>{"The voice used to read text", 1916})
 	.category(std::make_pair("Audio", 1826))
 	.level(options::ExpertLevel::Beginner)
+	.default_func([]() { return ttsvoice_enumerator().front(); }) // always guarantees at least 1 value
 	.enumerator(ttsvoice_enumerator)
 	.display(ttsvoice_display)
+	.serializer(ttsvoice_serializer)
+	.deserializer(ttsvoice_deserializer)
 	.flags({ options::OptionFlags::ForceMultiValueSelection })
-	.default_val(0)
 	.change_listener(ttsvoice_change)
 	.importance(3)
 	.finish();
@@ -230,7 +245,7 @@ bool fsspeech_init()
 		FSSpeech_play_from[FSSPEECH_FROM_INGAME] = SpeechIngameOption->getValue();
 		FSSpeech_play_from[FSSPEECH_FROM_MULTI] = SpeechMultiOption->getValue();
 		speech_set_volume((unsigned short)SpeechVolumeOption->getValue());
-		speech_set_voice(SpeechVoiceOption->getValue());
+		speech_set_voice(SpeechVoiceOption->getValue().first);
 		speech_set_rate(SpeechRateOption->getValue());
 	}
 	else 
