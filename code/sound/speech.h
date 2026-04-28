@@ -26,7 +26,7 @@ bool speech_set_rate(float rate);
 
 bool speech_is_speaking();
 
-SCP_vector<SCP_string> speech_enumerate_voices();
+SCP_vector<std::pair<int, SCP_string>> speech_enumerate_voices();
 
 #else
 
@@ -41,8 +41,8 @@ inline bool speech_set_voice(int /*voice*/) { return false; }
 inline bool speech_set_rate(float /*rate*/) { return false; } 
 inline bool speech_is_speaking() { return false; }
 
-inline SCP_vector<SCP_string> speech_enumerate_voices() {
-	return SCP_vector<SCP_string>();
+inline SCP_vector<std::pair<int, SCP_string>> speech_enumerate_voices() {
+	return SCP_vector<std::pair<int, SCP_string>>();
 }
 
 #endif

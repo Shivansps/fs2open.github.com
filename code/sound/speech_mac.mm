@@ -157,17 +157,17 @@ bool speech_is_speaking()
 	return [synth isSpeaking];
 }
 
-SCP_vector<SCP_string> speech_enumerate_voices()
+SCP_vector<std::pair<int, SCP_string>> speech_enumerate_voices()
 {
 	NSArray *voices = [NSSpeechSynthesizer availableVoices];
 
-	SCP_vector<SCP_string> fsoVoices;
+	SCP_vector<std::pair<int, SCP_string>> fsoVoices;
 
+	int voiceID = 0;
 	for (NSString *voiceIdentifier in voices) {
 		NSDictionary *attributes = [NSSpeechSynthesizer attributesForVoice:voiceIdentifier];
 		NSString *name = [attributes objectForKey:NSVoiceName];
-
-		fsoVoices.push_back([name UTF8String]);
+		fsoVoices.emplace_back(std::make_pair(voiceID++, [name UTF8String]));
 	}
 
 	return fsoVoices;

@@ -102,33 +102,36 @@ static json_t* ttsvoice_serializer(const std::pair<int, SCP_string>& value)
 	return json_pack("{s:i, s:s}", "id", value.first, "name", value.second.c_str());
 }
 
+static SCP_vector<std::pair<int, SCP_string>> voice_list_cache;
+
 static SCP_vector<std::pair<int, SCP_string>> ttsvoice_enumerator()
 {
-	SCP_vector< std::pair<int, SCP_string>> vals;
-	auto voices = speech_enumerate_voices();
-
-	if (voices.empty()) {
-		vals.emplace_back(std::make_pair(0, "No voices loaded"));
+	if(voice_list_cache.empty()) {
+		auto voices = speech_enumerate_voices();
+	
+		if (voices.empty()) {
+			voices.emplace_back(std::make_pair(0, "No voices loaded"));
+		}
+		voice_list_cache = voices;
+		return voices;
 	}
 	else {
-		for (int i = 0; i < static_cast<int>(voices.size()); ++i) {
-			vals.emplace_back(std::make_pair(i, voices[i]));
-		}
+		return voice_list_cache;
 	}
-	return vals;
 }
 
-static SCP_string ttsvoice_display(std::pair<int, SCP_string> vi)
+static SCP_string ttsvoice_display(const std::pair<int, SCP_string> vi)
 {
 	return vi.second;
 }
 
-static bool ttsvoice_change(std::pair<int, SCP_string> new_voice, bool initial)
+static bool ttsvoice_change(const std::pair<int, SCP_string> new_voice, bool initial)
 {
 	if (initial) {
 		return false;
 	}
 	speech_set_voice(new_voice.first);
+	voice_list_cache.clear();
 	return true;
 }
 

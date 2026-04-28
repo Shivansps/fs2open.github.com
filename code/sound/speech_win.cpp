@@ -197,9 +197,9 @@ bool speech_is_speaking()
 	return (pStatus.dwRunningState != SPRS_DONE);
 }
 
-SCP_vector<SCP_string> speech_enumerate_voices()
+SCP_vector<std::pair<int, SCP_string>> speech_enumerate_voices()
 {
-	SCP_vector<SCP_string> voices;
+	SCP_vector<std::pair<int, SCP_string>> voices;
 
 	ISpObjectTokenCategory* comTokenCategory = nullptr;
 	IEnumSpObjectTokens* comVoices = nullptr;
@@ -231,6 +231,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 		return voices;
 	}
 
+	int voiceID = 0;
 	while (comVoicesCount > 0) {
 		ISpObjectToken* comAVoice = nullptr;
 
@@ -247,7 +248,7 @@ SCP_vector<SCP_string> speech_enumerate_voices()
 				SCP_string voiceName;
 				voiceName.resize(buffer_size);
 				WideCharToMultiByte(CP_UTF8, 0, id, (int)idlength, &voiceName[0], buffer_size, nullptr, nullptr);
-				voices.push_back(voiceName);
+				voices.emplace_back(std::make_pair(voiceID++, voiceName));
 			}
 			CoTaskMemFree(id);
 		}

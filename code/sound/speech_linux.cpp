@@ -93,8 +93,6 @@ static bool ensure_speechd_lib()
 }
 
 // Speech handling starts here
-static SCP_vector<SCP_string> cached_voices;
-static bool voices_cached = false;
 static bool Speech_init = false;
 static SPDConnection* spd = nullptr;
 
@@ -130,8 +128,6 @@ void speech_deinit()
 		dlclose(lib_handle); 
 		lib_handle = nullptr; 
 	}
-	voices_cached = false;
-	cached_voices.clear();
 }
 
 bool speech_play(const SCP_string& text)
@@ -204,7 +200,7 @@ bool speech_set_voice(int voice)
         return false;
     }
     
-	p_spd_set_synthesis_voice(spd, voices[voice].c_str());
+	p_spd_set_synthesis_voice(spd, voices[voice].second.c_str());
 	
 	return true;
 }
@@ -232,58 +228,38 @@ bool speech_is_speaking()
 	return false;
 }
 
-SCP_vector<SCP_string> speech_enumerate_voices()
+SCP_vector<std::pair<int, SCP_string>> speech_enumerate_voices()
 {
-	if (voices_cached) {
-		return cached_voices;
-	}
+	SCP_vector<std::pair<int, SCP_string>> fsoVoices;
 
-	SCP_vector<SCP_string> fsoVoices;
-
-	if (!ensure_speechd_lib()) {
-		return fsoVoices;
-	}
-
-	SPDConnection* connection = spd;
 	if (!Speech_init) {
-		connection = p_spd_open("freespace_open", "main", nullptr, SPD_MODE_SINGLE);
-		if (!connection) {
+		if (!ensure_speechd_lib()) {
+			return fsoVoices;
+		}
+		spd = p_spd_open("freespace_open", "main", nullptr, SPD_MODE_SINGLE);
+		if (!spd) {
 			mprintf(("Speech: Unable to connect to speech-dispatcher\n"));
 			return fsoVoices;
 		}
 	}
 
-	SPDVoice** voices = p_spd_list_synthesis_voices(connection);
+	SPDVoice** voices = p_spd_list_synthesis_voices(spd);
 
-	if (voices)
-	{
-		int num_voices = 0;
-		//Count voices
-		while (voices[num_voices] != nullptr) {
-			num_voices++;
-		}
-
+	if (voices) {
 		for (int i = 0; voices[i] != nullptr; i++) {
-			// There are too many we cant add them all
-			// Only add English voices
-			if (num_voices < 600 || (voices[i]->language && strstr(voices[i]->language, "en") != nullptr)) {
-				SCP_string voiceName = voices[i]->name ? voices[i]->name : "unknown";
-				fsoVoices.push_back(voiceName);
-			}
+			fsoVoices.emplace_back(std::make_pair(i, voices[i]->name));
 		}
 		p_free_spd_voices(voices);
 	}
-	else
-	{
+	else {
 		mprintf(("Speech: Unable to get voice list from speech-dispatcher.\n"));
 	}
 
 	if (!Speech_init) {
-		p_spd_close(connection);
+		p_spd_close(spd);
+		spd = nullptr;
 	}
 
-	voices_cached = true;
-	cached_voices = fsoVoices;
 	return fsoVoices;
 }
 
