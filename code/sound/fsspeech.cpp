@@ -132,6 +132,7 @@ static bool ttsvoice_change(const std::pair<int, SCP_string>& new_voice, bool in
 	}
 	speech_set_voice(new_voice.first);
 	voice_list_cache.clear();
+	voice_list_cache.shrink_to_fit();
 	return true;
 }
 
