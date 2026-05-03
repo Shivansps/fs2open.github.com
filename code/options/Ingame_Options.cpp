@@ -4,6 +4,7 @@
 
 #include "options/OptionsManager.h"
 #include "options/Option.h"
+#include <sound/fsspeech.h>
 
 static std::unique_ptr<OptConfigurator> OCGR;
 
@@ -100,6 +101,7 @@ void ingame_options_init()
 
 void ingame_options_close()
 {
+	fsspeech_options_cleanup();
 	OCGR.reset();
 }
 
