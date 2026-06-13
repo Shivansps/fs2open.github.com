@@ -23,14 +23,14 @@
 #define CFILE_BLOCK_USED		1
 
 struct COMPRESSION_INFO {
-	int header = 0;
-	size_t compressed_size = 0;
-	int block_size = 0;
-	int num_offsets = 0;
-	int* offsets = nullptr;
-	char* decoder_buffer = nullptr;
-	int last_decoded_block_pos = 0;
-	int last_decoded_block_bytes = 0;
+	int header = 0;                     // compression magic, 0 = not compressed / not valid
+	size_t compressed_size = 0;         // size of the compressed file (within the VP, excludes lib_offset)
+	int block_size = 0;                 // uncompressed bytes per block
+	int num_offsets = 0;                // number of entries in the offset table (num_blocks + 1)
+	int* offsets = nullptr;             // start position (within the compressed file) of each block
+	char* decoder_buffer = nullptr;		// holds the most recently decoded block (block_size bytes)
+	int cached_block = -1;              // index of the block currently held in decoder_buffer: -1 = none
+	int cached_block_bytes = 0;         // number of decoded bytes in decoder_buffer
 };
 
 struct CFILE {

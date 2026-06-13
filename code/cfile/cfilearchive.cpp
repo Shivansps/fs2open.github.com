@@ -57,7 +57,8 @@ void cf_init_lowlevel_read_code( CFILE * cfile, size_t lib_offset, size_t size, 
 //This function checks the file header to see if the file is compressed, if so it fills the correct compression info.
 void cf_check_compression(CFILE* cfile)
 {
-	if (cfile->size <= 16)
+	// Smallest a valid LZ41 file can be: 4 (header) + 1 (block) + 8 (2 offsets) + 12 (footer) = 25.
+	if (cfile->size < 25)
 		return;
 	int header=cfread_int(cfile);
 	cfseek(cfile, 0, SEEK_SET);
@@ -76,9 +77,10 @@ void cf_clear_compression_info(CFILE* cfile)
 		cfile->compression_info.decoder_buffer = nullptr;
 		cfile->compression_info.header = 0;
 		cfile->compression_info.block_size = 0;
-		cfile->compression_info.last_decoded_block_pos = 0;
-		cfile->compression_info.last_decoded_block_bytes = 0;
+		cfile->compression_info.cached_block = -1;
+		cfile->compression_info.cached_block_bytes = 0;
 		cfile->compression_info.num_offsets = 0;
+		cfile->compression_info.compressed_size = 0;
 	}
 }
 

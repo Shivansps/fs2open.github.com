@@ -1,17 +1,25 @@
 /*
-ShivanSpS - Compressed files support for FSO. Many thanks to ngld, taylor and everyone elsewho helped me in getting this done.
+ShivanSpS - Compressed files support for FSO. Many thanks to ngld, taylor and everyone else who helped me in getting this done.
 
--The file header is a version, this is used to tell FSO how to decompress that file, always use 4 chars to mantain alignment.
--The header ID can be used to add diferent revisions to LZ41 decompression system or to add other compression format supports whiout breaking compatibility.
--The system uses a offset list to record the position of every block in file, this list, along with the number of offsets, original filesize,
-and block size, must be written by the compressor app.
--A decoder cache is used to store the last decoded block, this ensures each block is read and decoded only once in sequential reads. This cache
-is a little bit bigger than the block size, a higher block size means less overhead added to the file, but it also means a little more ram will
-be used during decompression.
--All this dynamic memory is assigned at cfopen() and it is cleared on cfclose().
+LZ41 FORMAT
+--------------------------------------------------------------------------------------
+                                  char[4]      (n compressed blocks)   (num_offsets ints)      (int)        (int)              (int)
+  COMPRESSED FILE DATA STRUCTURE: HEADER     | BLOCK_0 .. BLOCK_{n-1} | OFFSET_TABLE      | NUM_OFFSETS | ORIGINAL_FILESIZE | BLOCK_SIZE
 
-................................char[4]..........(n ints)...(int)..........(int)..........(int)
--COMPRESSED FILE DATA STUCTURE: HEADER|N BLOCKS|N OFFSETS|NUM_OFFSETS|ORIGINAL_FILESIZE|BLOCK_SIZE
+  * HEADER is a 4-char version tag ("LZ41"). It lets FSO pick the right decoder and lets us add
+    future revisions/formats without breaking compatibility. Always 4 chars to keep alignment.
+  * Each BLOCK is an *independent* LZ4 block: the compressor resets the HC stream before every
+    block, so no block references any other. That is what allows both random access
+    and parallel decoding possible.
+  * OFFSET_TABLE holds NUM_OFFSETS little-endian ints. offsets[i] is the start of block i within
+    the compressed file; offsets[i+1] is its end. The first entry is always 4 (just past the
+    header) and the last entry marks the start of the offset table itself. So
+    NUM_OFFSETS = (number of blocks) + 1.
+  * The 12-byte footer (NUM_OFFSETS, ORIGINAL_FILESIZE, BLOCK_SIZE) is written by the compressor.
+
+  A decoder cache holds the last decoded block so sequential reads only decode each block once.
+  All dynamic memory is allocated in comp_create_ci() at cfopen() and released in
+  cf_clear_compression_info() at cfclose().
 */
 
 #ifndef _CFILECOMPRESSION_H
@@ -39,12 +47,16 @@ int comp_check_header(int header);
 	This is called to generate the correct compression_info data
 	after the file has been indentified as a compressed file.
 	This must be done before calling any other function.
+
+	If the file footer or offset table fail validation the file is rejected: compression_info
+	is left cleared (header = 0) and cfile considers it as a normal file, so a corrupt
+	compressed file never crashes the decoder.
 */
 void comp_create_ci(CFILE* cf, int header);
 
 /*
-	Read X bytes from the uncompressed file starting from X offset.
-	Returns the amount of bytes read, and 0 or lower to indicate errors.
+	Read X bytes from the uncompressed file starting from the current position.
+	Returns the amount of bytes read, and a negative LZ41_* code (cast to size_t) on error.
 */
 size_t comp_fread(CFILE* cf, char* buffer, size_t length);
 
@@ -54,7 +66,7 @@ size_t comp_fread(CFILE* cf, char* buffer, size_t length);
 size_t comp_ftell(CFILE* cf);
 
 /*
-	Returns 1 of the uncompressed file has been completely read, otherwise it returns a 0.
+	Returns 1 if the uncompressed file has been completely read, otherwise it returns a 0.
 */
 int comp_feof(CFILE* cf);
 
