@@ -17,6 +17,7 @@
 #include "lz4.h"
 #include "cfilecompression.h"
 #include "cfilearchive.h"
+#include "utils/threading.h"
 
 
 #define LZ41_MT_MIN_BLOCKS 3 // Minimum number of consecutive blocks to trigger MT
@@ -108,16 +109,14 @@ int comp_fseek(CFILE* cf, int offset, int where)
 }
 
 extern int Cmdline_multithreading;
+static int allowed_threads = Cmdline_multithreading;
 //Get number of max threads we are allowed to use
 static int max_threads()
 {
-	if (Cmdline_multithreading == 0) {
-		auto hwt = std::thread::hardware_concurrency();
-		if (hwt == 0) hwt = 2;
-		return static_cast<int>(hwt);
-	} else {
-		return Cmdline_multithreading;
+	if (allowed_threads == 0) {
+		allowed_threads = static_cast<int>(threading::get_num_physical_cores());
 	}
+	return allowed_threads;
 }
 
 //Special fseek for compressed files handled by FSO, only SEEK_SET and SEEK_END is supported.
