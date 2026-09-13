@@ -616,6 +616,8 @@ if (FSO_BUILD_WITH_VULKAN)
 		graphics/vulkan/VulkanDrawAPI.cpp
 		graphics/vulkan/VulkanMemory.cpp
 		graphics/vulkan/VulkanMemory.h
+		graphics/vulkan/VulkanOpenXR.cpp
+		graphics/vulkan/VulkanOpenXR.h
 		graphics/vulkan/VulkanPerFrameUbo.cpp
 		graphics/vulkan/VulkanPerFrameUbo.h
 		graphics/vulkan/VulkanPipeline.cpp
@@ -974,6 +976,7 @@ add_file_folder("Model"
 	model/model.h
 	model/modelcollide.cpp
 	model/modelinterp.cpp
+	model/modelinterp.h
 	model/modelread.cpp
 	model/modelrender.h
 	model/modelrender.cpp

@@ -51,7 +51,7 @@ void VulkanRenderer::createCompositionResources()
 		vk::ImageCreateInfo imageInfo;
 		imageInfo.imageType = vk::ImageType::e2D;
 		imageInfo.format = HDR_COLOR_FORMAT;
-		imageInfo.extent = vk::Extent3D(m_swapChainExtent.width, m_swapChainExtent.height, 1);
+		imageInfo.extent = vk::Extent3D(m_renderExtent.width, m_renderExtent.height, 1);
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 1;
 		imageInfo.samples = vk::SampleCountFlagBits::e1;
@@ -156,8 +156,8 @@ void VulkanRenderer::createFrameBuffers()
 		framebufferInfo.renderPass = m_renderPass.get();
 		framebufferInfo.attachmentCount = 2;
 		framebufferInfo.pAttachments = attachments;
-		framebufferInfo.width = m_swapChainExtent.width;
-		framebufferInfo.height = m_swapChainExtent.height;
+		framebufferInfo.width = m_renderExtent.width;
+		framebufferInfo.height = m_renderExtent.height;
 		framebufferInfo.layers = 1;
 
 		m_swapChainFramebuffers.push_back(m_device->createFramebufferUnique(framebufferInfo));
@@ -180,6 +180,14 @@ void VulkanRenderer::createFrameBuffers()
 	}
 }
 
+vk::Image VulkanRenderer::getCurrentCompositionImage() const
+{
+	if (m_currentSwapChainImage >= m_compositionImages.size()) {
+		return {};
+	}
+
+	return m_compositionImages[m_currentSwapChainImage].get();
+}
 void VulkanRenderer::encodeToSwapChain()
 {
 	if (!m_postProcessor || m_currentSwapChainImage >= m_swapChainImages.size()) {
@@ -258,8 +266,8 @@ void VulkanRenderer::createDepthResources()
 	vk::ImageCreateInfo imageInfo;
 	imageInfo.imageType = vk::ImageType::e2D;
 	imageInfo.format = m_depthFormat;
-	imageInfo.extent.width = m_swapChainExtent.width;
-	imageInfo.extent.height = m_swapChainExtent.height;
+	imageInfo.extent.width = m_renderExtent.width;
+	imageInfo.extent.height = m_renderExtent.height;
 	imageInfo.extent.depth = 1;
 	imageInfo.mipLevels = 1;
 	imageInfo.arrayLayers = 1;
@@ -288,7 +296,7 @@ void VulkanRenderer::createDepthResources()
 	m_depthImageView = m_device->createImageViewUnique(viewInfo);
 
 	nprintf(("vulkan", "Vulkan: Created depth buffer (%dx%d, format %d)\n",
-		m_swapChainExtent.width, m_swapChainExtent.height, static_cast<int>(m_depthFormat)));
+		m_renderExtent.width, m_renderExtent.height, static_cast<int>(m_depthFormat)));
 }
 void VulkanRenderer::destroyDepthResources()
 {
@@ -455,8 +463,8 @@ bool VulkanRenderer::readbackFramebuffer(ubyte** outPixels, uint32_t* outWidth, 
 	const vk::PipelineStageFlags2 srcStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
 	const vk::AccessFlags2 srcAccessMask = vk::AccessFlagBits2::eShaderSampledRead;
 	const uint32_t bytesPerSrcPixel = 8; // fp16 RGBA = 4 x 2 bytes
-	uint32_t w = m_swapChainExtent.width;
-	uint32_t h = m_swapChainExtent.height;
+	uint32_t w = m_renderExtent.width;
+	uint32_t h = m_renderExtent.height;
 	vk::DeviceSize bufferSize = static_cast<vk::DeviceSize>(w) * h * bytesPerSrcPixel;
 
 	// End the current render pass so we can record transfer commands
