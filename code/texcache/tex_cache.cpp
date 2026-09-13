@@ -189,8 +189,8 @@ void tex_cache_store(const SCP_string &key, uint width, uint height, uint mips, 
 }
 
 auto CacheSizeLimit = options::OptionBuilder<float>("Graphics.TexCacheSize",
-	std::pair<const char*, int>{"Texture Transcode Cache", 1933},
-	std::pair<const char*, int>{"Texture transcode cache size in GBs. 0 for unlimited. Mostly relevant for mobile GPUs lacking S3TC / BC7 support.", 1934})
+	std::pair<const char*, int>{"Texture Transcode Cache", 1936},
+	std::pair<const char*, int>{"Texture transcode cache size in GBs. 0 for unlimited. Mostly relevant for mobile GPUs lacking S3TC / BC7 support.", 1937})
 	.category(std::make_pair("Graphics", 1825))
 	.level(options::ExpertLevel::Advanced)
 	.range(0.0f, 20.0f)
