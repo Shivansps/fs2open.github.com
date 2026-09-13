@@ -109,12 +109,12 @@ static size_t compute_etc2_size(const DDS_HEADER& dds_header, uint block_bytes)
 // of textures.
 //
 // NOTE: modifies header!!
-// ETC2: For converting to ETC2 limit all to MAX_SIZE or half-size
+// ETC2: For converting to ETC2 limit all to 4096x4096 or half-size
 // 
 // returns: number of mipmap levels to skip
 static uint conversion_resize(DDS_HEADER& dds_header, dds_conv_target target)
 {
-	const size_t MAX_SIZE = 1024;
+	const size_t MAX_SIZE = (target == dds_conv_target::etc2) ? 4096 : 1024;
 	uint width, height, depth, offset = 0;
 
 	if (dds_header.dwMipMapCount <= 1) {
