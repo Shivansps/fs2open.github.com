@@ -1,0 +1,524 @@
+diff --git a/include/host/backends/vk/ffxm_vk.h b/include/host/backends/vk/ffxm_vk.h
+index 6295bd62428a6ce97312e1bc8cb9583234e2dbb7..f584fd25c274f5d9033d903236666d950a25d9ca 100644
+--- a/include/host/backends/vk/ffxm_vk.h
++++ b/include/host/backends/vk/ffxm_vk.h
+@@ -68,6 +68,8 @@ typedef struct VkDeviceContext {
+     VkDevice                vkDevice;           /// The Vulkan device
+     VkPhysicalDevice        vkPhysicalDevice;   /// The Vulkan physical device
+     PFN_vkGetDeviceProcAddr vkDeviceProcAddr;   /// The device's function address table
++    VkInstance              vkInstance;
++    PFN_vkGetInstanceProcAddr vkInstanceProcAddr;
+ } VkDeviceContext;
+ 
+ /// Create a <c><i>FfxmDevice</i></c> from a <c><i>VkDevice</i></c>.
+@@ -114,7 +116,7 @@ FFXM_API FfxmCommandList ffxmGetCommandListVK(VkCommandBuffer cmdBuf);
+ 
+ /// Fetch a <c><i>FfxmResource</i></c> from a <c><i>GPUResource</i></c>.
+ ///
+-/// @param [in] vkResource                  A pointer to the (agnostic) VK resource.
++/// @param [in] vkResource                  The native Vulkan image or buffer handle.
+ /// @param [in] ffxmResDescription           An <c><i>FfxmResourceDescription</i></c> for the resource representation.
+ /// @param [in] ffxmResName                  (optional) A name string to identify the resource in debug mode.
+ /// @param [in] state                       The state the resource is currently in.
+@@ -123,7 +125,7 @@ FFXM_API FfxmCommandList ffxmGetCommandListVK(VkCommandBuffer cmdBuf);
+ /// An abstract FidelityFX resources.
+ ///
+ /// @ingroup VKBackend
+-FFXM_API FfxmResource ffxmGetResourceVK(void*  vkResource,
++FFXM_API FfxmResource ffxmGetResourceVK(FfxmGpuHandle vkResource,
+     FfxmResourceDescription                  ffxmResDescription,
+     wchar_t*                                ffxmResName,
+     FfxmResourceStates                       state = FFXM_RESOURCE_STATE_COMPUTE_READ);
+diff --git a/include/host/ffxm_fsr2.h b/include/host/ffxm_fsr2.h
+index 0df8ec0fb017a4bd9fb30ebec979814cefe0bc99..274c7ab49c19ccc9ec8009e2ef28c33319082124 100644
+--- a/include/host/ffxm_fsr2.h
++++ b/include/host/ffxm_fsr2.h
+@@ -246,7 +246,7 @@ typedef struct FfxmFsr2GenerateReactiveDescription {
+ /// @ingroup ffxmFsr2
+ typedef struct FfxmFsr2Context
+ {
+-    uint32_t data[FFXM_FSR2_CONTEXT_SIZE * 2];  ///< An opaque set of <c>uint32_t</c> which contain the data for the context.
++    alignas(uint64_t) uint32_t data[FFXM_FSR2_CONTEXT_SIZE * 2];  ///< An opaque set of <c>uint32_t</c> which contain the data for the context.
+ } FfxmFsr2Context;
+ 
+ 
+diff --git a/include/host/ffxm_types.h b/include/host/ffxm_types.h
+index 80f7ec947ecf043b77cc4681ead3efbc33ca2f88..d60b14ab80472f753d9280f4e68b7ff89497e305 100644
+--- a/include/host/ffxm_types.h
++++ b/include/host/ffxm_types.h
+@@ -462,10 +462,17 @@ typedef void* FfxmRootSignature;
+ /// @ingroup SDKTypes
+ typedef void* FfxmCommandSignature;
+ 
++// Vulkan non-dispatchable handles remain 64-bit on 32-bit hosts.
++#if UINTPTR_MAX == UINT32_MAX
++typedef uint64_t FfxmGpuHandle;
++#else
++typedef void* FfxmGpuHandle;
++#endif
++
+ /// A typedef for a pipeline state object.
+ ///
+ /// @ingroup SDKTypes
+-typedef void* FfxmPipeline;
++typedef FfxmGpuHandle FfxmPipeline;
+ 
+ /// A structure encapsulating a collection of device capabilities.
+ ///
+@@ -537,7 +544,7 @@ typedef struct FfxmResourceDescription {
+ ///
+ /// @ingroup SDKTypes
+ typedef struct FfxmResource {
+-    void*                           resource;                               ///< pointer to the resource.
++    FfxmGpuHandle                   resource;                               ///< The native resource handle.
+     FfxmResourceDescription          description;
+     FfxmResourceStates               state;
+     wchar_t                         name[FFXM_RESOURCE_NAME_SIZE];           ///< (optional) Resource name.
+diff --git a/src/backends/shared/blob_accessors/ffxm_fsr2_shaderblobs.cpp b/src/backends/shared/blob_accessors/ffxm_fsr2_shaderblobs.cpp
+index ab7c8134d1014f64bd9c97e006f5c7b2be3b5d06..d723a222f8b19872c6e3dccfb16bef692f6cfa00 100644
+--- a/src/backends/shared/blob_accessors/ffxm_fsr2_shaderblobs.cpp
++++ b/src/backends/shared/blob_accessors/ffxm_fsr2_shaderblobs.cpp
+@@ -215,9 +215,7 @@ FfxmErrorCode fsr2GetPermutationBlobByIndex(
+             break;
+     }
+ 
+-    // return an empty blob
+-    memset(&outBlob, 0, sizeof(FfxmShaderBlob));
+-    return FFXM_OK;
++    return FFXM_ERROR_INVALID_ENUM;
+ }
+ 
+ FfxmErrorCode fsr2IsWave64(uint32_t permutationOptions, bool& isWave64)
+diff --git a/src/backends/vk/ffxm_hash.cpp b/src/backends/vk/ffxm_hash.cpp
+index f6b2ce1adea2188c3fbc700f4d2707f4a090c034..42978beb38be2ad3b88623a65f6d7739666cc750 100644
+--- a/src/backends/vk/ffxm_hash.cpp
++++ b/src/backends/vk/ffxm_hash.cpp
+@@ -26,7 +26,7 @@ namespace arm {
+ constexpr uint64_t kHashM = 0xc6a4a7935bd1e995;
+ constexpr uint64_t kHashR = 47;
+ 
+-uint64_t appendHash(const void* buffer, size_t bufferSize, uint64_t h)
++uint64_t appendHash(const void* buffer, std::size_t bufferSize, uint64_t h)
+ {
+ 	const uint64_t* data = static_cast<const uint64_t*>(buffer);
+ 	const uint64_t* const end = data + (bufferSize / sizeof(uint64_t));
+@@ -71,7 +71,7 @@ uint64_t appendHash(const void* buffer, size_t bufferSize, uint64_t h)
+ 	return h;
+ }
+ 
+-uint64_t computeHash(const void* buffer, size_t bufferSize, uint64_t seed)
++uint64_t computeHash(const void* buffer, std::size_t bufferSize, uint64_t seed)
+ {
+ 	const uint64_t h = seed ^ (bufferSize * kHashM);
+ 	return appendHash(buffer, bufferSize, h);
+diff --git a/src/backends/vk/ffxm_hash.h b/src/backends/vk/ffxm_hash.h
+index e313c3c1e42e9beaccfca0d89712117f679f6794..17a4192f1d27c1eb1bee70ac00426a83da09ecfa 100644
+--- a/src/backends/vk/ffxm_hash.h
++++ b/src/backends/vk/ffxm_hash.h
+@@ -21,6 +21,7 @@
+ 
+ #pragma once
+ 
++#include <cstddef>
+ #include <cstdint>
+ 
+ namespace arm {
+@@ -33,14 +34,14 @@ namespace arm {
+ /// @param bufferSize The size of the buffer.
+ /// @param seed A unique seed.
+ /// @return The hash.
+-uint64_t computeHash(const void* buffer, size_t bufferSize, uint64_t seed = 123);
++uint64_t computeHash(const void* buffer, std::size_t bufferSize, uint64_t seed = 123);
+ 
+ /// Computes a hash of a buffer. This function implements the MurmurHash2 algorithm by Austin Appleby.
+ /// @param[in] buffer The buffer to hash.
+ /// @param bufferSize The size of the buffer.
+ /// @param prevHash The hash to append to.
+ /// @return The new hash.
+-uint64_t appendHash(const void* buffer, size_t bufferSize, uint64_t prevHash);
++uint64_t appendHash(const void* buffer, std::size_t bufferSize, uint64_t prevHash);
+ /// @}
+ 
+ } // end namespace arm
+diff --git a/src/backends/vk/ffxm_vk.cpp b/src/backends/vk/ffxm_vk.cpp
+index 93e1c46b978c93e0c31192e7b39b44d86da730cd..45ad301bc7c96545cfe7684455109b0d82bcf62f 100644
+--- a/src/backends/vk/ffxm_vk.cpp
++++ b/src/backends/vk/ffxm_vk.cpp
+@@ -30,10 +30,22 @@
+ #include <array>
+ #include <ffxm_hash.h>
+ #include <locale>
++#include <type_traits>
+ 
+ namespace arm
+ {
+ 
++template <typename To, typename From>
++static To castGpuHandle(From handle)
++{
++    static_assert(sizeof(To) == sizeof(From));
++    if constexpr (std::is_pointer_v<To> || std::is_pointer_v<From>) {
++        return reinterpret_cast<To>(handle);
++    } else {
++        return static_cast<To>(handle);
++    }
++}
++
+ // prototypes for functions in the interface
+ FfxmUInt32              GetSDKVersionVK(FfxmInterface* backendInterface);
+ FfxmErrorCode           CreateBackendContextVK(FfxmInterface* backendInterface, FfxmUInt32* effectContextId);
+@@ -51,7 +63,11 @@ FfxmErrorCode           DestroyPipelineVK(FfxmInterface* backendInterface, FfxmP
+ FfxmErrorCode           ScheduleGpuJobVK(FfxmInterface* backendInterface, const FfxmGpuJobDescription* job);
+ FfxmErrorCode           ExecuteGpuJobsVK(FfxmInterface* backendInterface, FfxmCommandList commandList);
+ 
+-static VkDeviceContext sVkDeviceContext = { VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE };
++static VkDeviceContext sVkDeviceContext{};
++static PFN_vkEnumerateDeviceExtensionProperties enumerateDeviceExtensions;
++static PFN_vkGetPhysicalDeviceMemoryProperties getPhysicalDeviceMemoryProperties;
++static PFN_vkGetPhysicalDeviceProperties2 getPhysicalDeviceProperties2;
++static PFN_vkGetPhysicalDeviceFeatures2 getPhysicalDeviceFeatures2;
+ 
+ #define MAX_DESCRIPTOR_SET_LAYOUTS      (32)
+ #define MAX_DESCRIPTOR_SETS             (2)
+@@ -209,6 +225,8 @@ typedef struct BackendContext_VK {
+         PFN_vkCmdBeginRenderPass            vkCmdBeginRenderPass = 0;
+         PFN_vkCmdEndRenderPass              vkCmdEndRenderPass = 0;
+         PFN_vkCmdDraw                       vkCmdDraw = 0;
++        PFN_vkCmdSetViewport                vkCmdSetViewport = 0;
++        PFN_vkCmdSetScissor                 vkCmdSetScissor = 0;
+     } VkFunctionTable;
+ 
+     VkDevice                device = nullptr;
+@@ -223,7 +241,7 @@ typedef struct BackendContext_VK {
+     } VkResourceView;
+     VkResourceView*         pResourceViews;
+ 
+-    VkDeviceMemory          ringBufferMemory = nullptr;
++    VkDeviceMemory          ringBufferMemory = VK_NULL_HANDLE;
+     VkMemoryPropertyFlags   ringBufferMemoryProperties = 0;
+     UniformBuffer*          pRingBuffer;
+     FfxmUInt32                ringBufferBase = 0;
+@@ -274,7 +292,7 @@ FFXM_API size_t ffxmGetScratchMemorySizeVK(VkPhysicalDevice physicalDevice, size
+     FfxmUInt32 numExtensions = 0;
+ 
+     if (physicalDevice)
+-        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &numExtensions, nullptr);
++        enumerateDeviceExtensions(physicalDevice, nullptr, &numExtensions, nullptr);
+ 
+     FfxmUInt32 extensionPropArraySize = sizeof(VkExtensionProperties) * numExtensions;
+     FfxmUInt32 gpuJobDescArraySize = FFXM_ALIGN_UP(maxContexts * FFXM_MAX_GPU_JOBS * sizeof(FfxmGpuJobDescription), sizeof(FfxmUInt32));
+@@ -285,13 +303,19 @@ FFXM_API size_t ffxmGetScratchMemorySizeVK(VkPhysicalDevice physicalDevice, size
+     FfxmUInt32 contextArraySize = FFXM_ALIGN_UP(maxContexts * sizeof(BackendContext_VK::EffectContext), sizeof(FfxmUInt32));
+ 
+     return FFXM_ALIGN_UP(sizeof(BackendContext_VK) + extensionPropArraySize + gpuJobDescArraySize + resourceArraySize + ringBufferArraySize +
+-        pipelineArraySize + resourceArraySize + contextArraySize, sizeof(uint64_t));
++        pipelineArraySize + resourceViewArraySize + contextArraySize, sizeof(uint64_t));
+ }
+ 
+ // Create a FfxmDevice from a VkDevice
+ FfxmDevice ffxmGetDeviceVK(VkDeviceContext* vkDeviceContext)
+ {
+     sVkDeviceContext = *vkDeviceContext;
++    const auto get = vkDeviceContext->vkInstanceProcAddr;
++    const auto instance = vkDeviceContext->vkInstance;
++    enumerateDeviceExtensions = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(get(instance, "vkEnumerateDeviceExtensionProperties"));
++    getPhysicalDeviceMemoryProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(get(instance, "vkGetPhysicalDeviceMemoryProperties"));
++    getPhysicalDeviceProperties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(get(instance, "vkGetPhysicalDeviceProperties2"));
++    getPhysicalDeviceFeatures2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(get(instance, "vkGetPhysicalDeviceFeatures2"));
+     return reinterpret_cast<FfxmDevice>(&sVkDeviceContext);
+ }
+ 
+@@ -350,7 +374,7 @@ FfxmCommandList ffxmGetCommandListVK(VkCommandBuffer cmdBuf)
+     return reinterpret_cast<FfxmCommandList>(cmdBuf);
+ }
+ 
+-FfxmResource ffxmGetResourceVK(void* vkResource,
++FfxmResource ffxmGetResourceVK(FfxmGpuHandle vkResource,
+     FfxmResourceDescription          ffxmResDescription,
+     [[maybe_unused]] wchar_t* ffxmResName,
+     FfxmResourceStates               state /*=FFXM_RESOURCE_STATE_COMPUTE_READ*/)
+@@ -374,7 +398,7 @@ FfxmUInt32 findMemoryTypeIndex(VkPhysicalDevice physicalDevice, VkMemoryRequirem
+     FFXM_ASSERT(NULL != physicalDevice);
+ 
+     VkPhysicalDeviceMemoryProperties memProperties;
+-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
++    getPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+ 
+     FfxmUInt32 bestCandidate = UINT32_MAX;
+ 
+@@ -382,9 +406,14 @@ FfxmUInt32 findMemoryTypeIndex(VkPhysicalDevice physicalDevice, VkMemoryRequirem
+         if ((memRequirements.memoryTypeBits & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & requestedProperties)) {
+ 
+ #ifndef __ANDROID__
+-            // if just device-local memory is requested, make sure this is the invisible heap to prevent over-subscribing the local heap
+-            if (requestedProperties == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT && (memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
++            // Prefer non-host-visible device-local memory, with a fallback for unified memory.
++            if (requestedProperties == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT && (memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
++                if (bestCandidate == UINT32_MAX) {
++                    bestCandidate = i;
++                    outProperties = memProperties.memoryTypes[i].propertyFlags;
++                }
+                 continue;
++            }
+ #endif
+ 
+             bestCandidate = i;
+@@ -705,7 +734,7 @@ VkAccessFlags getVKAccessFlagsFromResourceState(FfxmResourceStates state)
+     case(FFXM_RESOURCE_STATE_PIXEL_COMPUTE_READ):
+         return VK_ACCESS_SHADER_READ_BIT;
+     case(FFXM_RESOURCE_STATE_PIXEL_WRITE):
+-        return VK_ACCESS_SHADER_WRITE_BIT;
++        return VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+     case FFXM_RESOURCE_STATE_COPY_SRC:
+         return VK_ACCESS_TRANSFER_READ_BIT;
+     case FFXM_RESOURCE_STATE_COPY_DEST:
+@@ -724,17 +753,19 @@ VkPipelineStageFlags getVKPipelineStageFlagsFromResourceState(FfxmResourceStates
+ 
+     case(FFXM_RESOURCE_STATE_GENERIC_READ):
+     case(FFXM_RESOURCE_STATE_UNORDERED_ACCESS):
+-    case(FFXM_RESOURCE_STATE_COMPUTE_READ):
+-    case(FFXM_RESOURCE_STATE_PIXEL_READ):
+     case(FFXM_RESOURCE_STATE_PIXEL_COMPUTE_READ):
++        return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
++    case(FFXM_RESOURCE_STATE_COMPUTE_READ):
+         return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
++    case(FFXM_RESOURCE_STATE_PIXEL_READ):
++        return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+     case(FFXM_RESOURCE_STATE_INDIRECT_ARGUMENT):
+         return VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+     case FFXM_RESOURCE_STATE_COPY_SRC:
+     case FFXM_RESOURCE_STATE_COPY_DEST:
+         return VK_PIPELINE_STAGE_TRANSFER_BIT;
+     case FFXM_RESOURCE_STATE_PIXEL_WRITE:
+-        return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
++        return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+     default:
+         FFXM_ASSERT_MESSAGE(false, "Pipeline stage flag not yet supported");
+         return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+@@ -958,10 +989,6 @@ FfxmErrorCode CreateBackendContextVK(FfxmInterface* backendInterface, FfxmUInt32
+         backendContext->extensionProperties = (VkExtensionProperties*)pMem;
+ 
+ 
+-        // if vkGetDeviceProcAddr is NULL, use the one from the vulkan header
+-        if (vkDeviceContext->vkDeviceProcAddr == NULL)
+-            vkDeviceContext->vkDeviceProcAddr = vkGetDeviceProcAddr;
+-
+         if (vkDeviceContext->vkDevice != VK_NULL_HANDLE) {
+             backendContext->device = vkDeviceContext->vkDevice;
+         }
+@@ -1069,12 +1096,14 @@ FfxmErrorCode CreateBackendContextVK(FfxmInterface* backendInterface, FfxmUInt32
+         backendContext->vkFunctionTable.vkCmdBeginRenderPass = (PFN_vkCmdBeginRenderPass)vkDeviceContext->vkDeviceProcAddr(backendContext->device, "vkCmdBeginRenderPass");
+         backendContext->vkFunctionTable.vkCmdEndRenderPass = (PFN_vkCmdEndRenderPass)vkDeviceContext->vkDeviceProcAddr(backendContext->device, "vkCmdEndRenderPass");
+         backendContext->vkFunctionTable.vkCmdDraw = (PFN_vkCmdDraw)vkDeviceContext->vkDeviceProcAddr(backendContext->device, "vkCmdDraw");
++        backendContext->vkFunctionTable.vkCmdSetViewport = reinterpret_cast<PFN_vkCmdSetViewport>(vkDeviceContext->vkDeviceProcAddr(backendContext->device, "vkCmdSetViewport"));
++        backendContext->vkFunctionTable.vkCmdSetScissor = reinterpret_cast<PFN_vkCmdSetScissor>(vkDeviceContext->vkDeviceProcAddr(backendContext->device, "vkCmdSetScissor"));
+ #endif // FFXM_VKLOADER_VOLK
+ 
+         // enumerate all the device extensions
+         backendContext->numDeviceExtensions = 0;
+-        vkEnumerateDeviceExtensionProperties(backendContext->physicalDevice, nullptr, &backendContext->numDeviceExtensions, nullptr);
+-        vkEnumerateDeviceExtensionProperties(backendContext->physicalDevice, nullptr, &backendContext->numDeviceExtensions, backendContext->extensionProperties);
++        enumerateDeviceExtensions(backendContext->physicalDevice, nullptr, &backendContext->numDeviceExtensions, nullptr);
++        enumerateDeviceExtensions(backendContext->physicalDevice, nullptr, &backendContext->numDeviceExtensions, backendContext->extensionProperties);
+ 
+         // create a global descriptor pool to hold all descriptors we'll need
+         VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
+@@ -1225,7 +1254,7 @@ FfxmErrorCode GetDeviceCapabilitiesVK(FfxmInterface* backendInterface, FfxmDevic
+             VkPhysicalDeviceProperties2 deviceProperties2 = {};
+             deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+             deviceProperties2.pNext = &subgroupSizeControlProperties;
+-            vkGetPhysicalDeviceProperties2(context->physicalDevice, &deviceProperties2);
++            getPhysicalDeviceProperties2(context->physicalDevice, &deviceProperties2);
+ 
+             deviceCapabilities->waveLaneCountMin = subgroupSizeControlProperties.minSubgroupSize;
+             deviceCapabilities->waveLaneCountMax = subgroupSizeControlProperties.maxSubgroupSize;
+@@ -1240,7 +1269,7 @@ FfxmErrorCode GetDeviceCapabilitiesVK(FfxmInterface* backendInterface, FfxmDevic
+             physicalDeviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+             physicalDeviceFeatures2.pNext = &shaderFloat18Int8Features;
+ 
+-            vkGetPhysicalDeviceFeatures2(context->physicalDevice, &physicalDeviceFeatures2);
++            getPhysicalDeviceFeatures2(context->physicalDevice, &physicalDeviceFeatures2);
+ 
+             deviceCapabilities->fp16Supported = (bool)shaderFloat18Int8Features.shaderFloat16;
+         }
+@@ -1254,7 +1283,7 @@ FfxmErrorCode GetDeviceCapabilitiesVK(FfxmInterface* backendInterface, FfxmDevic
+             physicalDeviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+             physicalDeviceFeatures2.pNext = &accelerationStructureFeatures;
+ 
+-            vkGetPhysicalDeviceFeatures2(context->physicalDevice, &physicalDeviceFeatures2);
++            getPhysicalDeviceFeatures2(context->physicalDevice, &physicalDeviceFeatures2);
+ 
+             deviceCapabilities->raytracingSupported = (bool)accelerationStructureFeatures.accelerationStructure;
+         }
+@@ -1678,7 +1707,7 @@ FfxmErrorCode RegisterResourceVK(
+     BackendContext_VK* backendContext = (BackendContext_VK*)(backendInterface->scratchBuffer);
+     BackendContext_VK::EffectContext& effectContext = backendContext->pEffectContexts[effectContextId];
+ 
+-    if (inFfxmResource->resource == nullptr) {
++    if (!inFfxmResource->resource) {
+ 
+         outFfxmResourceInternal->internalIndex = 0; // Always maps to FFXM_<feature>_RESOURCE_IDENTIFIER_NULL;
+         return FFXM_OK;
+@@ -1737,9 +1766,9 @@ FfxmErrorCode RegisterResourceVK(
+     // If we got here, we are setting up a new dynamic entry
+     backendResource->resourceDescription = inFfxmResource->description;
+     if (inFfxmResource->description.type == FFXM_RESOURCE_TYPE_BUFFER)
+-        backendResource->bufferResource = reinterpret_cast<VkBuffer>(inFfxmResource->resource);
++        backendResource->bufferResource = castGpuHandle<VkBuffer>(inFfxmResource->resource);
+     else
+-        backendResource->imageResource = reinterpret_cast<VkImage>(inFfxmResource->resource);
++        backendResource->imageResource = castGpuHandle<VkImage>(inFfxmResource->resource);
+ 
+     copyResourceState(backendResource, inFfxmResource);
+ 
+@@ -1856,7 +1885,7 @@ FfxmResource GetResourceVK(FfxmInterface* backendInterface, FfxmResourceInternal
+     FfxmResourceDescription ffxmResDescription = backendInterface->fpGetResourceDescription(backendInterface, inResource);
+ 
+     FfxmResource resource = {};
+-    resource.resource = reinterpret_cast<void*>(backendContext->pResources[inResource.internalIndex].imageResource);
++    resource.resource = castGpuHandle<FfxmGpuHandle>(backendContext->pResources[inResource.internalIndex].imageResource);
+     // If the internal resource state is undefined, that means we are importing a resource that
+     // has not yet been initialized, so we will flag it as such to finish initializing it later
+     // before it is used.
+@@ -2245,7 +2274,7 @@ FfxmErrorCode CreateComputePipelineVK(FfxmInterface* backendInterface,
+     pipelineCreateInfo.layout = pPipelineLayout->pipelineLayout;
+ 
+     VkPipeline computePipeline = VK_NULL_HANDLE;
+-    if (backendContext->vkFunctionTable.vkCreateComputePipelines(backendContext->device, nullptr, 1, &pipelineCreateInfo, nullptr, &computePipeline) != VK_SUCCESS) {
++    if (backendContext->vkFunctionTable.vkCreateComputePipelines(backendContext->device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &computePipeline) != VK_SUCCESS) {
+         return FFXM_ERROR_BACKEND_API_ERROR;
+     }
+ 
+@@ -2253,7 +2282,7 @@ FfxmErrorCode CreateComputePipelineVK(FfxmInterface* backendInterface,
+     backendContext->vkFunctionTable.vkDestroyShaderModule(backendContext->device, shaderModule, nullptr);
+ 
+     // set the pipeline
+-    outPipeline->pipeline = reinterpret_cast<FfxmPipeline>(computePipeline);
++    outPipeline->pipeline = castGpuHandle<FfxmPipeline>(computePipeline);
+ 
+     return FFXM_OK;
+ }
+@@ -2777,7 +2806,7 @@ FfxmErrorCode getOrCreateGraphicsPipeline(BackendContext_VK* backendContext, Ffx
+         pipelineLayout->graphicsPipelineIndex = idx;
+ 
+         // set the pipeline
+-        pipeline->pipeline = reinterpret_cast<FfxmPipeline>(pipelineLayout->graphicsPipeline[pipelineLayout->graphicsPipelineIndex].handle);
++        pipeline->pipeline = castGpuHandle<FfxmPipeline>(pipelineLayout->graphicsPipeline[pipelineLayout->graphicsPipelineIndex].handle);
+ 
+         return FFXM_OK;
+     }
+@@ -2904,7 +2933,7 @@ FfxmErrorCode getOrCreateGraphicsPipeline(BackendContext_VK* backendContext, Ffx
+     pipelineLayout->graphicsPipeline[pipelineLayout->graphicsPipelineIndex].hash = hash;
+ 
+     // set the pipeline
+-    pipeline->pipeline = reinterpret_cast<FfxmPipeline>(pipelineLayout->graphicsPipeline[pipelineLayout->graphicsPipelineIndex].handle);
++    pipeline->pipeline = castGpuHandle<FfxmPipeline>(pipelineLayout->graphicsPipeline[pipelineLayout->graphicsPipelineIndex].handle);
+ 
+     return FFXM_OK;
+ }
+@@ -2918,7 +2947,7 @@ FfxmErrorCode DestroyPipelineVK(FfxmInterface* backendInterface, FfxmPipelineSta
+         return FFXM_OK;
+ 
+     // Destroy the pipeline
+-    VkPipeline vkPipeline = reinterpret_cast<VkPipeline>(pipeline->pipeline);
++    VkPipeline vkPipeline = castGpuHandle<VkPipeline>(pipeline->pipeline);
+ 
+     BackendContext_VK::PipelineLayout* pPipelineLayout = reinterpret_cast<BackendContext_VK::PipelineLayout*>(pipeline->rootSignature);
+ 
+@@ -3236,7 +3265,7 @@ static FfxmErrorCode executeGpuJobCompute(BackendContext_VK* backendContext, Ffx
+     backendContext->vkFunctionTable.vkUpdateDescriptorSets(backendContext->device, descriptorWriteIndex, writeDescriptorSets, 0, nullptr);
+ 
+     // bind pipeline
+-    backendContext->vkFunctionTable.vkCmdBindPipeline(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, reinterpret_cast<VkPipeline>(job->computeJobDescriptor.pipeline.pipeline));
++    backendContext->vkFunctionTable.vkCmdBindPipeline(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, castGpuHandle<VkPipeline>(job->computeJobDescriptor.pipeline.pipeline));
+ 
+     // bind descriptor sets
+     backendContext->vkFunctionTable.vkCmdBindDescriptorSets(vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout->pipelineLayout, 0, job->computeJobDescriptor.pipeline.descriptorSetCount, pipelineLayout->descriptorSets[pipelineLayout->descriptorSetIndex], 0, nullptr);
+@@ -3420,16 +3449,16 @@ static FfxmErrorCode executeGpuJobFragment(BackendContext_VK* backendContext, Ff
+ 
+     backendContext->vkFunctionTable.vkCmdBeginRenderPass(vkCommandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+     // bind pipeline
+-    backendContext->vkFunctionTable.vkCmdBindPipeline(vkCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, reinterpret_cast<VkPipeline>(job->fragmentJobDescription.pipeline->pipeline));
++    backendContext->vkFunctionTable.vkCmdBindPipeline(vkCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, castGpuHandle<VkPipeline>(job->fragmentJobDescription.pipeline->pipeline));
+ 
+     // bind descriptor sets
+     backendContext->vkFunctionTable.vkCmdBindDescriptorSets(vkCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout->pipelineLayout, 0, job->fragmentJobDescription.pipeline->descriptorSetCount, pipelineLayout->descriptorSets[pipelineLayout->descriptorSetIndex], 0, nullptr);
+ 
+     VkViewport viewport = { 0.0f, 0.0f, (float)job->fragmentJobDescription.viewport[0], (float)job->fragmentJobDescription.viewport[1] };
+-    vkCmdSetViewport(vkCommandBuffer, 0, 1, &viewport);
++    backendContext->vkFunctionTable.vkCmdSetViewport(vkCommandBuffer, 0, 1, &viewport);
+ 
+     VkRect2D scissor = { { 0, 0 }, { job->fragmentJobDescription.viewport[0], job->fragmentJobDescription.viewport[1] } };
+-    vkCmdSetScissor(vkCommandBuffer, 0, 1, &scissor);
++    backendContext->vkFunctionTable.vkCmdSetScissor(vkCommandBuffer, 0, 1, &scissor);
+ 
+     backendContext->vkFunctionTable.vkCmdDraw(vkCommandBuffer, 3, 1, 0, 0);
+ 
+diff --git a/src/components/fsr2/ffxm_fsr2.cpp b/src/components/fsr2/ffxm_fsr2.cpp
+index bc65d970921ded1195cd27f8111fe1133117303f..d13bb5db0d571016d85d3aaefd9d980da32f394e 100644
+--- a/src/components/fsr2/ffxm_fsr2.cpp
++++ b/src/components/fsr2/ffxm_fsr2.cpp
+@@ -197,22 +197,22 @@ static void fsr2DebugCheckDispatch(FfxmFsr2Context_Private* context, const FfxmF
+         context->contextDescription.fpMessage(FFXM_MESSAGE_TYPE_ERROR, L"commandList is null");
+     }
+ 
+-    if (params->color.resource == nullptr)
++    if (!params->color.resource)
+     {
+         context->contextDescription.fpMessage(FFXM_MESSAGE_TYPE_ERROR, L"color resource is null");
+     }
+ 
+-    if (params->depth.resource == nullptr)
++    if (!params->depth.resource)
+     {
+         context->contextDescription.fpMessage(FFXM_MESSAGE_TYPE_ERROR, L"depth resource is null");
+     }
+ 
+-    if (params->motionVectors.resource == nullptr)
++    if (!params->motionVectors.resource)
+     {
+         context->contextDescription.fpMessage(FFXM_MESSAGE_TYPE_ERROR, L"motionVectors resource is null");
+     }
+ 
+-    if (params->exposure.resource != nullptr)
++    if (params->exposure.resource)
+     {
+         if ((context->contextDescription.flags & FFXM_FSR2_ENABLE_AUTO_EXPOSURE) == FFXM_FSR2_ENABLE_AUTO_EXPOSURE)
+         {
+@@ -220,7 +220,7 @@ static void fsr2DebugCheckDispatch(FfxmFsr2Context_Private* context, const FfxmF
+         }
+     }
+ 
+-    if (params->output.resource == nullptr)
++    if (!params->output.resource)
+     {
+         context->contextDescription.fpMessage(FFXM_MESSAGE_TYPE_ERROR, L"output resource is null");
+     }
+@@ -568,7 +568,9 @@ static FfxmErrorCode fsr2Create(FfxmFsr2Context_Private* context, const FfxmFsr2
+ 	const bool applyBalancedModeOptimizations = contextDescription->qualityMode == FFXM_FSR2_SHADER_QUALITY_MODE_BALANCED;
+ 	const bool isBalancedOrPerformance = applyBalancedModeOptimizations || applyPerfModeOptimizations;
+ 
+-	const bool preparedInputColorNeedsFP16 = !applyPerfModeOptimizations;
++	// Performance's 8-bit target can quantize dark HDR colors to black before accumulation.
++	const bool hdrInput = (contextDescription->flags & FFXM_FSR2_ENABLE_HIGH_DYNAMIC_RANGE) != 0;
++	const bool preparedInputColorNeedsFP16 = !applyPerfModeOptimizations || hdrInput;
+ 
+ 	const bool isOpenGLES = (contextDescription->flags & FFXM_FSR2_OPENGL_ES_3_2) != 0;
+ 
+@@ -1297,6 +1299,7 @@ FfxmErrorCode ffxmFsr2ContextCreate(FfxmFsr2Context* context, const FfxmFsr2Cont
+ 
+     // ensure the context is large enough for the internal context.
+     FFXM_STATIC_ASSERT(sizeof(FfxmFsr2Context) >= sizeof(FfxmFsr2Context_Private));
++    FFXM_STATIC_ASSERT(alignof(FfxmFsr2Context) >= alignof(FfxmFsr2Context_Private));
+ 
+     // create the context.
+     FfxmFsr2Context_Private* contextPrivate = (FfxmFsr2Context_Private*)(context);
+@@ -1414,7 +1417,7 @@ FfxmErrorCode ffxmFsr2GetJitterOffset(float* outX, float* outY, int32_t index, i
+ 
+ FFXM_API bool ffxmFsr2ResourceIsNull(FfxmResource resource)
+ {
+-    return resource.resource == NULL;
++    return !resource.resource;
+ }
+ 
+ FfxmErrorCode ffxmFsr2ContextGenerateReactiveMask(FfxmFsr2Context* context, const FfxmFsr2GenerateReactiveDescription* params)

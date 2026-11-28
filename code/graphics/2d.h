@@ -82,7 +82,9 @@ struct TemporalUpscalerProvider {
 };
 // FSR uses its major version as the setting ID. Arm ASR has a separate persistent ID.
 constexpr int ARM_ASR_PROVIDER_SETTING_ID = 100;
+// The chosen provider's setting ID, or 0 for the renderer's default provider.
 extern int Gr_upscaler_provider;
+// Available providers, newest first. Empty when no upscaler is available.
 extern SCP_vector<TemporalUpscalerProvider> Gr_upscaler_providers;
 // The largest image side the renderer supports, which limits the output scale factor. 0 until the renderer is up.
 extern int Gr_max_output_size;

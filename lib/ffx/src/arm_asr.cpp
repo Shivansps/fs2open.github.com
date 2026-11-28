@@ -189,8 +189,29 @@ ffxReturnCode_t ffxCreateContext(ffxContext* context, ffxCreateContextDescHeader
     const auto& desc = *reinterpret_cast<const ffxCreateContextDescUpscale*>(header);
     arm::FfxmFsr2ContextDescription asr{};
     asr.backendInterface = SharedBackend.interface;
+#if defined(__ANDROID__)
+    // Favor lower GPU cost on mobile.
     asr.qualityMode = arm::FFXM_FSR2_SHADER_QUALITY_MODE_PERFORMANCE;
-    // These are the AMD flags whose bit positions match Arm's API.
+#else
+    // Balance image quality and GPU cost on desktop.
+    asr.qualityMode = arm::FFXM_FSR2_SHADER_QUALITY_MODE_BALANCED;
+#endif
+
+    // These flags are copied directly from AMD's bitmask into Arm's context.
+    static_assert(static_cast<uint32_t>(FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE)
+        == static_cast<uint32_t>(arm::FFXM_FSR2_ENABLE_HIGH_DYNAMIC_RANGE));
+    static_assert(static_cast<uint32_t>(FFX_UPSCALE_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS)
+        == static_cast<uint32_t>(arm::FFXM_FSR2_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS));
+    static_assert(static_cast<uint32_t>(FFX_UPSCALE_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION)
+        == static_cast<uint32_t>(arm::FFXM_FSR2_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION));
+    static_assert(static_cast<uint32_t>(FFX_UPSCALE_ENABLE_DEPTH_INVERTED)
+        == static_cast<uint32_t>(arm::FFXM_FSR2_ENABLE_DEPTH_INVERTED));
+    static_assert(static_cast<uint32_t>(FFX_UPSCALE_ENABLE_DEPTH_INFINITE)
+        == static_cast<uint32_t>(arm::FFXM_FSR2_ENABLE_DEPTH_INFINITE));
+    static_assert(static_cast<uint32_t>(FFX_UPSCALE_ENABLE_AUTO_EXPOSURE)
+        == static_cast<uint32_t>(arm::FFXM_FSR2_ENABLE_AUTO_EXPOSURE));
+    static_assert(static_cast<uint32_t>(FFX_UPSCALE_ENABLE_DYNAMIC_RESOLUTION)
+        == static_cast<uint32_t>(arm::FFXM_FSR2_ENABLE_DYNAMIC_RESOLUTION));
     asr.flags = desc.flags & (FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE | FFX_UPSCALE_ENABLE_AUTO_EXPOSURE
         | FFX_UPSCALE_ENABLE_DEPTH_INVERTED | FFX_UPSCALE_ENABLE_DEPTH_INFINITE
         | FFX_UPSCALE_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS | FFX_UPSCALE_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION

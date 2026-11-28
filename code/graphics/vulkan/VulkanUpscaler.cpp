@@ -196,9 +196,11 @@ void vulkan_upscaler_device_created(vk::Device device)
 	const auto versions = query_fsr_versions(device);
 	if (ffxPortableUsesArmAsr()) {
 		if (versions.empty()) {
+			mprintf(("Vulkan: Arm ASR reported no versions\n"));
 			Upscaler_available = false;
 			return;
 		}
+		mprintf(("Vulkan: Arm ASR version available: %s\n", versions.front().name.c_str()));
 		Gr_upscaler_providers.push_back({ARM_ASR_PROVIDER_SETTING_ID, versions.front().name});
 		return;
 	}

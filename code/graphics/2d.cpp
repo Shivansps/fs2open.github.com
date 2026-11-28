@@ -1058,7 +1058,7 @@ static float output_scale_factor()
 			}
 		}
 #endif
-		if (!output && Cmdline_window_res) {
+		if (!output.has_value() && Cmdline_window_res.has_value()) {
 			output = Cmdline_window_res;
 		}
 	}
@@ -1220,8 +1220,8 @@ static void fsr_resolve_cmdline_setting()
 
 // coverity[GLOBAL_INIT_ORDER] -- safe; OptionBuilder::finish() uses Meyers singleton
 static auto FsrOption __UNUSED = options::OptionBuilder<int>("Graphics.FSR",
-                     std::pair<const char*, int>{"AMD FSR", -1},
-                     std::pair<const char*, int>{"AMD's temporal anti aliasing and upscaling. AA keeps the rendering resolution. Upscale renders the 3D scene at the configured resolution and upscales it to the window/monitor resolution.", -1})
+                     std::pair<const char*, int>{"Temporal AA and Upscaling", -1},
+                     std::pair<const char*, int>{"Temporal anti-aliasing and upscaling. AA keeps the rendering resolution. Upscale renders the 3D scene at the configured resolution and upscales it to the window/monitor resolution.", -1})
                      .category(std::make_pair("Graphics", 1825))
                      .level(options::ExpertLevel::Advanced)
                      .enumerator(fsr_setting_enumerator)
