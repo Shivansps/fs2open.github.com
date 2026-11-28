@@ -48,9 +48,6 @@
 
 #include "backends/imgui_impl_opengl3.h"
 
-#ifdef __ANDROID__
-#include <SDL3/SDL_video.h>
-#endif
 #include <glad/glad.h>
 
 // minimum GL / GLES version we can reliably support is 3.2
